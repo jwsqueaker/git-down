@@ -1,0 +1,31 @@
+[Unit]
+Description=Portfolio Analysis & Tracking Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/portfolio-dashboard
+Environment="PATH=/opt/portfolio-dashboard/venv/bin"
+EnvironmentFile=/opt/portfolio-dashboard/.env
+ExecStart=/opt/portfolio-dashboard/venv/bin/streamlit run app.py --server.port=8501 --server.address=0.0.0.0
+
+# Restart policy
+Restart=always
+RestartSec=10
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/portfolio-dashboard/data
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=portfolio-dashboard
+
+[Install]
+WantedBy=multi-user.target

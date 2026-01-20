@@ -56,4 +56,19 @@ ENV/
 htmlcov/
 
 # Streamlit
-.streamlit/
+.streamlit/secrets.toml
+.streamlit/credentials.toml
+
+# Data directory
+data/
+*.csv
+!sample_data/*.csv
+
+# Deployment artifacts
+deployment/ssl/
+*.pem
+*.key
+*.crt
+
+# Docker
+.docker/
