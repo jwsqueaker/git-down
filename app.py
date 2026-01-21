@@ -13,6 +13,7 @@ from models.portfolio import Position, PortfolioSnapshot
 from services.data_fetcher import MarketDataFetcher, MacroDataFetcher, CorrelationAnalyzer
 from services.portfolio_calculator import PortfolioCalculator
 from services.monte_carlo import MonteCarloSimulator, estimate_parameters_from_returns
+from services.retirement_planner import RetirementPlanner, calculate_retirement_number
 from utils.csv_handler import CSVHandler
 from utils.helpers import format_percentage, format_currency, get_date_range
 from config.settings import BENCHMARKS, MACRO_INDICATORS
@@ -940,6 +941,551 @@ def display_monte_carlo_simulation(calculator):
         st.info("👆 Configure parameters above and click 'Run Simulation' to see projections")
 
 
+def display_retirement_planning(calculator):
+    """Display retirement planning and goal achievement analysis."""
+    st.header("🏖️ Retirement Planning")
+
+    st.markdown("""
+    Calculate the likelihood of reaching your retirement goals with comprehensive scenario analysis.
+    See if you're on track and what adjustments might be needed.
+    """)
+
+    # Get current portfolio value
+    snapshot = calculator.get_snapshot()
+    current_value = snapshot.total_value
+
+    # Personal Information
+    st.subheader("📋 Your Information")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        current_age = st.number_input(
+            "Current Age",
+            min_value=18,
+            max_value=100,
+            value=35,
+            step=1
+        )
+
+    with col2:
+        retirement_age = st.number_input(
+            "Target Retirement Age",
+            min_value=current_age + 1,
+            max_value=100,
+            value=65,
+            step=1
+        )
+
+    with col3:
+        life_expectancy = st.number_input(
+            "Life Expectancy",
+            min_value=retirement_age + 1,
+            max_value=120,
+            value=90,
+            step=1
+        )
+
+    # Financial Inputs
+    st.subheader("💰 Financial Inputs")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("**Accumulation Phase (Until Retirement)**")
+
+        current_portfolio = st.number_input(
+            "Current Portfolio Value ($)",
+            min_value=0.0,
+            value=float(current_value),
+            step=1000.0
+        )
+
+        annual_contribution = st.number_input(
+            "Annual Contribution/Savings ($)",
+            min_value=0.0,
+            value=20000.0,
+            step=1000.0,
+            help="How much you save each year"
+        )
+
+        contribution_growth = st.slider(
+            "Contribution Growth Rate (%/year)",
+            min_value=0.0,
+            max_value=10.0,
+            value=3.0,
+            step=0.5,
+            help="Annual increase in savings (raises, inflation)"
+        ) / 100
+
+        accumulation_return = st.slider(
+            "Expected Return - Working Years (%)",
+            min_value=0.0,
+            max_value=15.0,
+            value=8.0,
+            step=0.5
+        ) / 100
+
+        accumulation_volatility = st.slider(
+            "Volatility - Working Years (%)",
+            min_value=1.0,
+            max_value=30.0,
+            value=15.0,
+            step=1.0
+        ) / 100
+
+    with col2:
+        st.markdown("**Retirement Phase**")
+
+        desired_income = st.number_input(
+            "Desired Annual Retirement Income ($)",
+            min_value=0.0,
+            value=80000.0,
+            step=5000.0,
+            help="Annual income needed in retirement (today's dollars)"
+        )
+
+        st.markdown("**Other Income Sources**")
+
+        social_security = st.number_input(
+            "Expected Social Security ($/year)",
+            min_value=0.0,
+            value=25000.0,
+            step=1000.0
+        )
+
+        pension = st.number_input(
+            "Pension Income ($/year)",
+            min_value=0.0,
+            value=0.0,
+            step=1000.0
+        )
+
+        healthcare_costs = st.number_input(
+            "Annual Healthcare Costs ($)",
+            min_value=0.0,
+            value=10000.0,
+            step=1000.0
+        )
+
+        retirement_return = st.slider(
+            "Expected Return - Retirement (%)",
+            min_value=0.0,
+            max_value=12.0,
+            value=6.0,
+            step=0.5,
+            help="Typically lower than working years"
+        ) / 100
+
+        retirement_volatility = st.slider(
+            "Volatility - Retirement (%)",
+            min_value=1.0,
+            max_value=20.0,
+            value=10.0,
+            step=1.0,
+            help="Typically lower than working years"
+        ) / 100
+
+    # Advanced Settings
+    with st.expander("⚙️ Advanced Settings"):
+        col1, col2 = st.columns(2)
+
+        with col1:
+            inflation_rate = st.slider(
+                "Inflation Rate (%)",
+                min_value=0.0,
+                max_value=10.0,
+                value=3.0,
+                step=0.5
+            ) / 100
+
+            simulations = st.select_slider(
+                "Monte Carlo Simulations",
+                options=[5000, 10000, 25000],
+                value=10000
+            )
+
+        with col2:
+            other_expenses = st.number_input(
+                "Other Annual Expenses ($)",
+                min_value=0.0,
+                value=0.0,
+                step=1000.0
+            )
+
+    # Calculate Button
+    if st.button("🚀 Analyze Retirement Plan", type="primary"):
+        with st.spinner("Running retirement analysis..."):
+            # Create retirement planner
+            planner = RetirementPlanner(
+                current_age=current_age,
+                retirement_age=retirement_age,
+                life_expectancy=life_expectancy,
+                current_portfolio_value=current_portfolio,
+                annual_contribution=annual_contribution,
+                contribution_growth_rate=contribution_growth,
+                expected_return=accumulation_return,
+                volatility=accumulation_volatility,
+                simulations=simulations
+            )
+
+            # Calculate retirement readiness
+            analysis = planner.calculate_retirement_readiness(
+                desired_annual_income=desired_income,
+                social_security_annual=social_security,
+                pension_annual=pension,
+                healthcare_annual=healthcare_costs,
+                other_expenses_annual=other_expenses,
+                inflation_rate=inflation_rate,
+                retirement_return=retirement_return,
+                retirement_volatility=retirement_volatility
+            )
+
+            # Store in session state
+            st.session_state.retirement_analysis = analysis
+            st.session_state.retirement_planner = planner
+
+        st.success("✅ Analysis complete!")
+
+    # Display Results
+    if 'retirement_analysis' in st.session_state:
+        analysis = st.session_state.retirement_analysis
+
+        st.markdown("---")
+        st.subheader("📊 Retirement Readiness Analysis")
+
+        # Success Rate - Big Display
+        success_rate = analysis['success_rate']
+        readiness_level = analysis['readiness_level']
+        readiness_color = analysis['readiness_color']
+
+        col1, col2, col3 = st.columns([2, 1, 1])
+
+        with col1:
+            st.markdown(f"""
+            <div style="text-align: center; padding: 30px; background-color: {readiness_color}20; border-radius: 10px;">
+                <h1 style="color: {readiness_color}; margin: 0;">{success_rate*100:.1f}%</h1>
+                <h3 style="margin: 10px 0;">Probability of Success</h3>
+                <p style="font-size: 18px; margin: 0;"><b>{readiness_level}</b></p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col2:
+            st.metric(
+                "Years to Retirement",
+                f"{analysis['years_to_retirement']} years"
+            )
+            st.metric(
+                "Years in Retirement",
+                f"{analysis['years_in_retirement']} years"
+            )
+
+        with col3:
+            st.metric(
+                "Successful Scenarios",
+                f"{analysis['successful_scenarios']:,}"
+            )
+            st.metric(
+                "Failed Scenarios",
+                f"{analysis['failed_scenarios']:,}"
+            )
+
+        # Interpretation
+        st.markdown("### What This Means")
+
+        if success_rate >= 0.90:
+            st.success(f"""
+            🎉 **Excellent!** Your retirement plan has a {success_rate*100:.0f}% chance of success.
+            You're very likely to meet your retirement goals with your current strategy.
+            """)
+        elif success_rate >= 0.75:
+            st.info(f"""
+            ✅ **Good!** Your retirement plan has a {success_rate*100:.0f}% chance of success.
+            You're on a solid track, though you might consider boosting savings to increase your margin of safety.
+            """)
+        elif success_rate >= 0.60:
+            st.warning(f"""
+            ⚠️ **Fair.** Your retirement plan has a {success_rate*100:.0f}% chance of success.
+            Consider increasing savings, working longer, or adjusting retirement expectations.
+            """)
+        else:
+            st.error(f"""
+            ❌ **Needs Improvement.** Your retirement plan has only a {success_rate*100:.0f}% chance of success.
+            Significant adjustments are recommended to meet your retirement goals.
+            """)
+
+        # Portfolio Projections
+        st.subheader("💼 Projected Retirement Portfolio")
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.metric(
+                "Median at Retirement",
+                format_currency(analysis['median_retirement_value']),
+                help="50% chance of having more, 50% less"
+            )
+
+        with col2:
+            st.metric(
+                "Pessimistic (10th %)",
+                format_currency(analysis['p10_retirement_value']),
+                help="90% chance of having more than this"
+            )
+
+        with col3:
+            st.metric(
+                "Optimistic (90th %)",
+                format_currency(analysis['p90_retirement_value']),
+                help="10% chance of having more than this"
+            )
+
+        # Income Analysis
+        st.subheader("💵 Retirement Income Analysis")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("**Income Sources**")
+
+            total_income = desired_income
+            income_from_portfolio = analysis['net_income_needed']
+            other_income = social_security + pension
+
+            income_breakdown = pd.DataFrame({
+                'Source': ['Portfolio Withdrawals', 'Social Security', 'Pension', 'Total'],
+                'Annual Amount': [
+                    format_currency(income_from_portfolio),
+                    format_currency(social_security),
+                    format_currency(pension),
+                    format_currency(total_income)
+                ]
+            })
+
+            st.dataframe(income_breakdown, use_container_width=True, hide_index=True)
+
+        with col2:
+            st.markdown("**Withdrawal Analysis**")
+
+            withdrawal_rate = analysis['withdrawal_rate']
+            sustainable_4pct = analysis['sustainable_income_4pct']
+
+            withdrawal_comparison = pd.DataFrame({
+                'Metric': [
+                    'Your Withdrawal Rate',
+                    'Traditional 4% Rule',
+                    'Sustainable Income (4%)',
+                    'Difference'
+                ],
+                'Value': [
+                    f"{withdrawal_rate*100:.2f}%",
+                    "4.00%",
+                    format_currency(sustainable_4pct),
+                    format_currency(sustainable_4pct - income_from_portfolio)
+                ]
+            })
+
+            st.dataframe(withdrawal_comparison, use_container_width=True, hide_index=True)
+
+            if withdrawal_rate > 0.04:
+                st.warning(f"⚠️ Your {withdrawal_rate*100:.1f}% withdrawal rate exceeds the traditional 4% rule")
+            else:
+                st.success(f"✅ Your {withdrawal_rate*100:.1f}% withdrawal rate is sustainable")
+
+        # Shortfall/Surplus Analysis
+        st.subheader("📈 Gap Analysis")
+
+        shortfall = analysis['shortfall']
+        surplus = analysis['surplus']
+
+        if shortfall > 0:
+            st.error(f"""
+            **Shortfall: {format_currency(shortfall)}**
+
+            To achieve 90% probability of success, you need approximately {format_currency(shortfall)} more in your retirement portfolio.
+            """)
+
+            # Calculate what's needed
+            years_remaining = retirement_age - current_age
+            if years_remaining > 0:
+                # Additional monthly savings needed
+                # Simple calculation: shortfall / years / 12
+                additional_monthly = shortfall / years_remaining / 12
+
+                st.markdown("**Ways to Close the Gap:**")
+                st.markdown(f"""
+                - 💰 Increase annual savings by ~{format_currency(shortfall/years_remaining)} ({format_currency(additional_monthly)}/month)
+                - 📅 Work {int(shortfall / (current_portfolio * 0.08))} additional year(s)
+                - 📉 Reduce retirement spending by {format_currency(shortfall * 0.04)}/year
+                - 📊 Target higher investment returns (riskier)
+                """)
+        else:
+            st.success(f"""
+            **Surplus: {format_currency(surplus)}**
+
+            Great news! Your projected portfolio exceeds the amount needed for a 90% success rate.
+            You have a comfortable margin of safety.
+            """)
+
+            st.markdown("**Options with Your Surplus:**")
+            st.markdown(f"""
+            - 🏖️ Retire earlier (potentially {int(surplus / (annual_contribution * 1.5))} years sooner)
+            - 💸 Increase retirement spending by {format_currency(surplus * 0.04)}/year
+            - 🎁 Leave a larger legacy/inheritance
+            - 😌 Reduce current savings rate and enjoy life now
+            """)
+
+        # Total Contributions Summary
+        st.subheader("📊 Savings Summary")
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.metric(
+                "Total Contributions",
+                format_currency(analysis['total_contributions']),
+                help="Sum of all contributions until retirement"
+            )
+
+        with col2:
+            median_growth = analysis['median_retirement_value'] - current_portfolio - analysis['total_contributions']
+            st.metric(
+                "Projected Investment Growth",
+                format_currency(median_growth),
+                help="Expected growth from returns"
+            )
+
+        with col3:
+            if analysis['total_contributions'] > 0:
+                growth_multiple = analysis['median_retirement_value'] / analysis['total_contributions']
+                st.metric(
+                    "Growth Multiple",
+                    f"{growth_multiple:.1f}x",
+                    help="Portfolio value / contributions"
+                )
+
+        # Scenario Analysis
+        st.subheader("🎯 What-If Scenarios")
+
+        tab1, tab2 = st.tabs(["Retirement Age", "Income Level"])
+
+        with tab1:
+            st.markdown("**How does changing your retirement age affect success?**")
+
+            # Calculate scenarios for different retirement ages
+            ages_to_test = [
+                max(current_age + 5, 60),
+                retirement_age - 5,
+                retirement_age,
+                retirement_age + 5,
+                min(retirement_age + 10, 75)
+            ]
+            ages_to_test = sorted(list(set([age for age in ages_to_test if current_age < age <= 75])))
+
+            scenario_results = []
+            for age in ages_to_test:
+                test_planner = RetirementPlanner(
+                    current_age=current_age,
+                    retirement_age=age,
+                    life_expectancy=life_expectancy,
+                    current_portfolio_value=current_portfolio,
+                    annual_contribution=annual_contribution,
+                    contribution_growth_rate=contribution_growth,
+                    expected_return=accumulation_return,
+                    volatility=accumulation_volatility,
+                    simulations=5000
+                )
+
+                result = test_planner.calculate_retirement_readiness(
+                    desired_annual_income=desired_income,
+                    social_security_annual=social_security,
+                    pension_annual=pension,
+                    healthcare_annual=healthcare_costs,
+                    inflation_rate=inflation_rate,
+                    retirement_return=retirement_return,
+                    retirement_volatility=retirement_volatility
+                )
+
+                scenario_results.append({
+                    'Retirement Age': age,
+                    'Years Working': age - current_age,
+                    'Success Rate': f"{result['success_rate']*100:.1f}%",
+                    'Median Portfolio': format_currency(result['median_retirement_value']),
+                    'Status': result['readiness_level']
+                })
+
+            scenario_df = pd.DataFrame(scenario_results)
+            st.dataframe(scenario_df, use_container_width=True, hide_index=True)
+
+        with tab2:
+            st.markdown("**How does desired income affect success?**")
+
+            income_scenarios = [
+                desired_income * 0.7,
+                desired_income * 0.85,
+                desired_income,
+                desired_income * 1.15,
+                desired_income * 1.3
+            ]
+
+            income_results = []
+            planner = st.session_state.retirement_planner
+
+            for income in income_scenarios:
+                result = planner.calculate_retirement_readiness(
+                    desired_annual_income=income,
+                    social_security_annual=social_security,
+                    pension_annual=pension,
+                    healthcare_annual=healthcare_costs,
+                    inflation_rate=inflation_rate,
+                    retirement_return=retirement_return,
+                    retirement_volatility=retirement_volatility
+                )
+
+                income_results.append({
+                    'Annual Income': format_currency(income),
+                    'Success Rate': f"{result['success_rate']*100:.1f}%",
+                    'Withdrawal Rate': f"{result['withdrawal_rate']*100:.2f}%",
+                    'Status': result['readiness_level']
+                })
+
+            income_df = pd.DataFrame(income_results)
+            st.dataframe(income_df, use_container_width=True, hide_index=True)
+
+        # Action Items
+        if success_rate < 0.90:
+            st.subheader("✅ Recommended Actions")
+
+            st.markdown("**To improve your retirement outlook:**")
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.markdown("**Increase Savings**")
+                # Calculate required savings for 90% success
+                required_info = calculate_retirement_number(
+                    desired_annual_income=analysis['net_income_needed'],
+                    withdrawal_rate=0.04
+                )
+                additional_needed = required_info - analysis['median_retirement_value']
+
+                if additional_needed > 0 and (retirement_age - current_age) > 0:
+                    additional_annual = additional_needed / (retirement_age - current_age)
+                    additional_monthly = additional_annual / 12
+
+                    st.info(f"Save an additional **{format_currency(additional_monthly)}/month**")
+
+            with col2:
+                st.markdown("**Adjust Timeline**")
+                # Estimate years needed to work for 90% success
+                years_to_add = max(1, int((analysis['required_value_90pct'] - analysis['median_retirement_value']) / (annual_contribution * 1.5)))
+
+                st.info(f"Work **{years_to_add} more year(s)** (retire at {retirement_age + years_to_add})")
+
+    else:
+        st.info("👆 Fill in your information above and click 'Analyze Retirement Plan' to see your personalized retirement analysis")
+
+
 def sidebar():
     """Render sidebar."""
     st.sidebar.title("Portfolio Dashboard")
@@ -1060,14 +1606,15 @@ def main():
     calculator = PortfolioCalculator(st.session_state.portfolio_positions)
 
     # Tabs for different sections
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "Overview",
         "Performance",
         "Benchmark",
         "Macro Indicators",
         "Correlations",
         "LTCMA",
-        "Monte Carlo"
+        "Monte Carlo",
+        "Retirement"
     ])
 
     with tab1:
@@ -1090,6 +1637,9 @@ def main():
 
     with tab7:
         display_monte_carlo_simulation(calculator)
+
+    with tab8:
+        display_retirement_planning(calculator)
 
 
 if __name__ == "__main__":
