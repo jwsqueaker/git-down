@@ -1,6 +1,7 @@
 """Portfolio Analysis & Tracking Dashboard - Main Application."""
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime, timedelta
@@ -11,6 +12,7 @@ from models.database import init_db, get_session, PortfolioPosition
 from models.portfolio import Position, PortfolioSnapshot
 from services.data_fetcher import MarketDataFetcher, MacroDataFetcher, CorrelationAnalyzer
 from services.portfolio_calculator import PortfolioCalculator
+from services.monte_carlo import MonteCarloSimulator, estimate_parameters_from_returns
 from utils.csv_handler import CSVHandler
 from utils.helpers import format_percentage, format_currency, get_date_range
 from config.settings import BENCHMARKS, MACRO_INDICATORS
@@ -514,6 +516,430 @@ def display_ltcma_analysis():
     st.plotly_chart(fig, use_container_width=True)
 
 
+def display_monte_carlo_simulation(calculator):
+    """Display Monte Carlo simulation projections."""
+    st.header("🎲 Monte Carlo Simulation")
+
+    st.markdown("""
+    Project future portfolio values using Monte Carlo simulation with thousands of randomized scenarios.
+    Adjust assumptions below to see how different parameters affect your projections.
+    """)
+
+    # Get current portfolio value
+    snapshot = calculator.get_snapshot()
+    current_value = snapshot.total_value
+
+    # Sidebar for simulation parameters
+    st.subheader("Simulation Parameters")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("**Portfolio Settings**")
+
+        initial_value = st.number_input(
+            "Initial Portfolio Value ($)",
+            min_value=1000.0,
+            value=float(current_value),
+            step=1000.0,
+            help="Starting portfolio value for simulation"
+        )
+
+        years = st.slider(
+            "Time Horizon (Years)",
+            min_value=1,
+            max_value=50,
+            value=30,
+            help="Number of years to simulate"
+        )
+
+        annual_contribution = st.number_input(
+            "Annual Contribution ($)",
+            min_value=0.0,
+            value=0.0,
+            step=1000.0,
+            help="Additional yearly investment"
+        )
+
+        contribution_growth = st.slider(
+            "Contribution Growth Rate (%/year)",
+            min_value=0.0,
+            max_value=10.0,
+            value=3.0,
+            step=0.5,
+            help="Annual increase in contributions (inflation adjustment)"
+        ) / 100
+
+    with col2:
+        st.markdown("**Return Assumptions**")
+
+        # Option to use historical data or custom assumptions
+        use_historical = st.checkbox(
+            "Use Historical Portfolio Returns",
+            value=True,
+            help="Calculate expected return and volatility from your portfolio's historical performance"
+        )
+
+        if use_historical:
+            try:
+                # Calculate historical returns
+                returns = calculator.calculate_returns(
+                    start_date=(datetime.now() - timedelta(days=365*3)).strftime('%Y-%m-%d')
+                )
+
+                if not returns.empty:
+                    exp_return, volatility = estimate_parameters_from_returns(returns)
+                    st.info(f"📊 Historical: {exp_return*100:.1f}% return, {volatility*100:.1f}% volatility")
+                else:
+                    st.warning("No historical data available, using custom assumptions")
+                    use_historical = False
+                    exp_return = 0.08
+                    volatility = 0.15
+            except:
+                st.warning("Error calculating historical returns, using custom assumptions")
+                use_historical = False
+                exp_return = 0.08
+                volatility = 0.15
+
+        if not use_historical:
+            exp_return = st.slider(
+                "Expected Annual Return (%)",
+                min_value=-10.0,
+                max_value=30.0,
+                value=8.0,
+                step=0.5,
+                help="Average annual return assumption"
+            ) / 100
+
+            volatility = st.slider(
+                "Annual Volatility/Risk (%)",
+                min_value=1.0,
+                max_value=50.0,
+                value=15.0,
+                step=1.0,
+                help="Standard deviation of returns (higher = more risk)"
+            ) / 100
+
+    # Advanced settings
+    with st.expander("⚙️ Advanced Settings"):
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            n_simulations = st.select_slider(
+                "Number of Simulations",
+                options=[1000, 5000, 10000, 25000, 50000],
+                value=10000,
+                help="More simulations = more accurate but slower"
+            )
+
+        with col2:
+            distribution = st.selectbox(
+                "Return Distribution",
+                options=['lognormal', 'normal'],
+                index=0,
+                help="Log-normal is more realistic for stocks"
+            )
+
+        with col3:
+            rebalance_freq = st.selectbox(
+                "Rebalance Frequency",
+                options=['annual', 'monthly', 'daily'],
+                index=0,
+                help="How often to apply returns"
+            )
+
+        random_seed = st.number_input(
+            "Random Seed (for reproducibility)",
+            min_value=0,
+            max_value=9999,
+            value=42,
+            help="Same seed = same results"
+        )
+
+    # Run simulation button
+    if st.button("🚀 Run Simulation", type="primary"):
+        with st.spinner(f"Running {n_simulations:,} simulations..."):
+            # Create simulator
+            simulator = MonteCarloSimulator(
+                initial_value=initial_value,
+                expected_return=exp_return,
+                volatility=volatility,
+                years=years,
+                simulations=n_simulations,
+                annual_contribution=annual_contribution,
+                contribution_growth=contribution_growth,
+                random_seed=random_seed
+            )
+
+            # Run simulation
+            results_df = simulator.run_simulation(
+                distribution=distribution,
+                rebalance_frequency=rebalance_freq
+            )
+
+            # Store in session state
+            st.session_state.monte_carlo_results = {
+                'simulator': simulator,
+                'results': results_df,
+                'parameters': {
+                    'initial_value': initial_value,
+                    'years': years,
+                    'expected_return': exp_return,
+                    'volatility': volatility,
+                    'simulations': n_simulations
+                }
+            }
+
+        st.success("✅ Simulation complete!")
+
+    # Display results if available
+    if 'monte_carlo_results' in st.session_state:
+        results = st.session_state.monte_carlo_results
+        simulator = results['simulator']
+        results_df = results['results']
+        params = results['parameters']
+
+        st.markdown("---")
+        st.subheader("📊 Simulation Results")
+
+        # Summary statistics
+        stats = simulator.get_statistics()
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.metric(
+                "Median Final Value",
+                format_currency(stats['median']),
+                delta=format_currency(stats['median'] - params['initial_value'])
+            )
+
+        with col2:
+            st.metric(
+                "Mean Final Value",
+                format_currency(stats['mean']),
+                delta=format_currency(stats['mean'] - params['initial_value'])
+            )
+
+        with col3:
+            median_return = ((stats['median'] / params['initial_value']) ** (1/params['years']) - 1) * 100
+            st.metric(
+                "Median Annual Return",
+                f"{median_return:.1f}%"
+            )
+
+        with col4:
+            st.metric(
+                "Probability of Loss",
+                f"{stats['probability_of_loss']*100:.1f}%"
+            )
+
+        # Percentile ranges
+        st.subheader("Outcome Ranges")
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.markdown("**Pessimistic (5th percentile)**")
+            st.metric("Final Value", format_currency(stats['p5']))
+
+        with col2:
+            st.markdown("**Expected (50th percentile)**")
+            st.metric("Final Value", format_currency(stats['median']))
+
+        with col3:
+            st.markdown("**Optimistic (95th percentile)**")
+            st.metric("Final Value", format_currency(stats['p95']))
+
+        # Fan chart showing percentile ranges
+        st.subheader("Projected Portfolio Value Over Time")
+
+        fig = go.Figure()
+
+        # Add percentile bands
+        fig.add_trace(go.Scatter(
+            x=results_df['date'],
+            y=results_df['p95'],
+            name='95th Percentile',
+            line=dict(color='rgba(31, 119, 180, 0.3)'),
+            mode='lines'
+        ))
+
+        fig.add_trace(go.Scatter(
+            x=results_df['date'],
+            y=results_df['p75'],
+            name='75th Percentile',
+            fill='tonexty',
+            fillcolor='rgba(31, 119, 180, 0.2)',
+            line=dict(color='rgba(31, 119, 180, 0.4)'),
+            mode='lines'
+        ))
+
+        fig.add_trace(go.Scatter(
+            x=results_df['date'],
+            y=results_df['median'],
+            name='Median (50th)',
+            line=dict(color='#1f77b4', width=3),
+            mode='lines'
+        ))
+
+        fig.add_trace(go.Scatter(
+            x=results_df['date'],
+            y=results_df['p25'],
+            name='25th Percentile',
+            fill='tonexty',
+            fillcolor='rgba(31, 119, 180, 0.2)',
+            line=dict(color='rgba(31, 119, 180, 0.4)'),
+            mode='lines'
+        ))
+
+        fig.add_trace(go.Scatter(
+            x=results_df['date'],
+            y=results_df['p5'],
+            name='5th Percentile',
+            fill='tonexty',
+            fillcolor='rgba(31, 119, 180, 0.2)',
+            line=dict(color='rgba(31, 119, 180, 0.3)'),
+            mode='lines'
+        ))
+
+        fig.update_layout(
+            title="Portfolio Value Projection (Percentile Bands)",
+            xaxis_title="Date",
+            yaxis_title="Portfolio Value ($)",
+            hovermode='x unified',
+            height=600
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Distribution of final values
+        st.subheader("Distribution of Final Portfolio Values")
+
+        fig = go.Figure()
+
+        fig.add_trace(go.Histogram(
+            x=simulator.final_values,
+            nbinsx=50,
+            name='Final Values',
+            marker_color='#1f77b4'
+        ))
+
+        # Add vertical lines for percentiles
+        fig.add_vline(x=stats['p5'], line_dash="dash", line_color="red",
+                     annotation_text="5th percentile")
+        fig.add_vline(x=stats['median'], line_dash="dash", line_color="green",
+                     annotation_text="Median")
+        fig.add_vline(x=stats['p95'], line_dash="dash", line_color="red",
+                     annotation_text="95th percentile")
+
+        fig.update_layout(
+            title="Distribution of Final Values",
+            xaxis_title="Final Portfolio Value ($)",
+            yaxis_title="Frequency",
+            height=400
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Sample paths
+        st.subheader("Sample Simulation Paths")
+
+        sample_paths = simulator.get_sample_paths(n_samples=100)
+
+        fig = go.Figure()
+
+        for col in sample_paths.columns:
+            fig.add_trace(go.Scatter(
+                x=results_df['date'],
+                y=sample_paths[col],
+                mode='lines',
+                line=dict(width=0.5, color='rgba(100, 100, 100, 0.1)'),
+                showlegend=False,
+                hoverinfo='skip'
+            ))
+
+        # Add median line
+        fig.add_trace(go.Scatter(
+            x=results_df['date'],
+            y=results_df['median'],
+            name='Median',
+            line=dict(color='red', width=3),
+            mode='lines'
+        ))
+
+        fig.update_layout(
+            title="100 Random Simulation Paths",
+            xaxis_title="Date",
+            yaxis_title="Portfolio Value ($)",
+            height=500
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Goal probability calculator
+        st.subheader("🎯 Goal Achievement Calculator")
+
+        goal_amount = st.number_input(
+            "Target Portfolio Value ($)",
+            min_value=1000.0,
+            value=float(params['initial_value'] * 2),
+            step=10000.0
+        )
+
+        if goal_amount:
+            probability = simulator.get_probability_of_goal(goal_amount)
+
+            col1, col2 = st.columns([1, 2])
+
+            with col1:
+                st.metric(
+                    "Probability of Success",
+                    f"{probability*100:.1f}%"
+                )
+
+            with col2:
+                if probability >= 0.9:
+                    st.success(f"🎉 Very likely to reach ${goal_amount:,.0f}")
+                elif probability >= 0.75:
+                    st.info(f"✅ Good chance of reaching ${goal_amount:,.0f}")
+                elif probability >= 0.5:
+                    st.warning(f"⚠️ Moderate chance of reaching ${goal_amount:,.0f}")
+                else:
+                    st.error(f"❌ Unlikely to reach ${goal_amount:,.0f} with current assumptions")
+
+        # Detailed statistics table
+        with st.expander("📈 Detailed Statistics"):
+            stats_df = pd.DataFrame({
+                'Metric': [
+                    'Mean', 'Median', 'Std Dev',
+                    'Minimum', 'Maximum',
+                    '5th Percentile', '10th Percentile', '25th Percentile',
+                    '75th Percentile', '90th Percentile', '95th Percentile',
+                    'Probability of Loss'
+                ],
+                'Value': [
+                    format_currency(stats['mean']),
+                    format_currency(stats['median']),
+                    format_currency(stats['std']),
+                    format_currency(stats['min']),
+                    format_currency(stats['max']),
+                    format_currency(stats['p5']),
+                    format_currency(stats['p10']),
+                    format_currency(stats['p25']),
+                    format_currency(stats['p75']),
+                    format_currency(stats['p90']),
+                    format_currency(stats['p95']),
+                    f"{stats['probability_of_loss']*100:.2f}%"
+                ]
+            })
+
+            st.dataframe(stats_df, use_container_width=True)
+
+    else:
+        st.info("👆 Configure parameters above and click 'Run Simulation' to see projections")
+
+
 def sidebar():
     """Render sidebar."""
     st.sidebar.title("Portfolio Dashboard")
@@ -634,13 +1060,14 @@ def main():
     calculator = PortfolioCalculator(st.session_state.portfolio_positions)
 
     # Tabs for different sections
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "Overview",
         "Performance",
         "Benchmark",
         "Macro Indicators",
         "Correlations",
-        "LTCMA"
+        "LTCMA",
+        "Monte Carlo"
     ])
 
     with tab1:
@@ -660,6 +1087,9 @@ def main():
 
     with tab6:
         display_ltcma_analysis()
+
+    with tab7:
+        display_monte_carlo_simulation(calculator)
 
 
 if __name__ == "__main__":
