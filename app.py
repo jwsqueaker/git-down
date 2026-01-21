@@ -47,7 +47,9 @@ def load_portfolio_from_db():
             symbol=p.symbol,
             shares=p.shares,
             purchase_date=p.purchase_date,
-            purchase_price=p.purchase_price
+            purchase_price=p.purchase_price,
+            asset_class=p.asset_class,
+            description=p.description
         )
         for p in positions
     ]
@@ -66,7 +68,9 @@ def save_portfolio_to_db(positions):
             symbol=pos.symbol,
             shares=pos.shares,
             purchase_date=pos.purchase_date,
-            purchase_price=pos.purchase_price
+            purchase_price=pos.purchase_price,
+            asset_class=pos.asset_class,
+            description=pos.description
         )
         session.add(db_pos)
 
@@ -120,12 +124,13 @@ def display_portfolio_overview(calculator):
 
     if not df.empty:
         # Format columns
-        df['Purchase Price'] = df['Purchase Price'].apply(lambda x: format_currency(x))
-        df['Current Price'] = df['Current Price'].apply(lambda x: format_currency(x))
-        df['Cost Basis'] = df['Cost Basis'].apply(lambda x: format_currency(x))
-        df['Current Value'] = df['Current Value'].apply(lambda x: format_currency(x))
-        df['Gain/Loss'] = df['Gain/Loss'].apply(lambda x: format_currency(x))
-        df['Return %'] = df['Return %'].apply(lambda x: format_percentage(x / 100))
+        df['Avg. Price Paid'] = df['Avg. Price Paid'].apply(lambda x: format_currency(x))
+        df['Price'] = df['Price'].apply(lambda x: format_currency(x))
+        df['Cost'] = df['Cost'].apply(lambda x: format_currency(x))
+        df['Value'] = df['Value'].apply(lambda x: format_currency(x))
+        df['Unrealized G/L Amt.'] = df['Unrealized G/L Amt.'].apply(lambda x: format_currency(x))
+        df['% of Portfolio'] = df['% of Portfolio'].apply(lambda x: format_percentage(x / 100))
+        df['Quantity'] = df['Quantity'].apply(lambda x: f"{x:.2f}")
 
         st.dataframe(df, use_container_width=True)
 

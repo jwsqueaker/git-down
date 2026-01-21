@@ -17,6 +17,8 @@ class PortfolioPosition(Base):
     shares = Column(Float, nullable=False)
     purchase_date = Column(Date, nullable=False)
     purchase_price = Column(Float, nullable=False)
+    asset_class = Column(String(50))
+    description = Column(String(200))
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

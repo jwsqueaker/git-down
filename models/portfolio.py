@@ -14,6 +14,8 @@ class Position:
     purchase_date: date
     purchase_price: float
     current_price: Optional[float] = None
+    asset_class: Optional[str] = None
+    description: Optional[str] = None
 
     @property
     def cost_basis(self) -> float:
@@ -87,17 +89,21 @@ class PortfolioSnapshot:
     def to_dataframe(self) -> pd.DataFrame:
         """Convert positions to DataFrame."""
         data = []
+        total_value = self.total_value
+
         for p in self.positions:
+            pct_of_portfolio = (p.current_value / total_value * 100) if total_value > 0 else 0
             data.append({
-                'Symbol': p.symbol,
-                'Shares': p.shares,
-                'Purchase Date': p.purchase_date,
-                'Purchase Price': p.purchase_price,
-                'Current Price': p.current_price or 0,
-                'Cost Basis': p.cost_basis,
-                'Current Value': p.current_value,
-                'Gain/Loss': p.unrealized_gain_loss,
-                'Return %': p.unrealized_gain_loss_pct
+                'Asset Class': p.asset_class or 'N/A',
+                'Description': p.description or 'N/A',
+                'Ticker': p.symbol,
+                'Quantity': p.shares,
+                'Avg. Price Paid': p.purchase_price,
+                'Cost': p.cost_basis,
+                'Price': p.current_price or 0,
+                'Value': p.current_value,
+                'Unrealized G/L Amt.': p.unrealized_gain_loss,
+                '% of Portfolio': pct_of_portfolio
             })
         return pd.DataFrame(data)
 

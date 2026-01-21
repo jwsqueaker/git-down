@@ -16,6 +16,7 @@ class CSVHandler:
         Parse portfolio CSV file into Position objects.
 
         Expected columns: symbol, shares, purchase_date, purchase_price
+        Optional columns: asset_class, description
 
         Args:
             file_content: CSV file content as bytes
@@ -38,11 +39,17 @@ class CSVHandler:
                 # Parse date
                 purchase_date = pd.to_datetime(row['purchase_date']).date()
 
+                # Get optional fields
+                asset_class = str(row['asset_class']).strip() if 'asset_class' in df.columns and pd.notna(row.get('asset_class')) else None
+                description = str(row['description']).strip() if 'description' in df.columns and pd.notna(row.get('description')) else None
+
                 position = Position(
                     symbol=str(row['symbol']).upper().strip(),
                     shares=float(row['shares']),
                     purchase_date=purchase_date,
-                    purchase_price=float(row['purchase_price'])
+                    purchase_price=float(row['purchase_price']),
+                    asset_class=asset_class,
+                    description=description
                 )
                 positions.append(position)
 
@@ -95,11 +102,12 @@ class CSVHandler:
         Returns:
             CSV string template
         """
-        template = """symbol,shares,purchase_date,purchase_price
-AAPL,100,2023-01-15,150.25
-MSFT,50,2023-02-20,275.50
-GOOGL,25,2023-03-10,105.75
-SPY,200,2023-01-05,385.50
+        template = """asset_class,description,symbol,shares,purchase_date,purchase_price
+U.S. Large Cap Equity,Apple Inc.,AAPL,100,2023-01-15,150.25
+U.S. Large Cap Equity,Microsoft Corporation,MSFT,50,2023-02-20,275.50
+U.S. Large Cap Equity,Alphabet Inc.,GOOGL,25,2023-03-10,105.75
+U.S. Large Cap Equity,SPDR S&P 500 ETF Trust,SPY,200,2023-01-05,385.50
+U.S. Government Bonds,iShares 20+ Year Treasury Bond ETF,TLT,50,2023-02-01,95.30
 """
         return template
 
@@ -177,6 +185,8 @@ Cash,3.5,1.0
         data = []
         for pos in positions:
             data.append({
+                'asset_class': pos.asset_class or '',
+                'description': pos.description or '',
                 'symbol': pos.symbol,
                 'shares': pos.shares,
                 'purchase_date': pos.purchase_date.strftime('%Y-%m-%d'),

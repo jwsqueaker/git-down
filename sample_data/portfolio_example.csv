@@ -1,11 +1,11 @@
-symbol,shares,purchase_date,purchase_price
-AAPL,100,2023-01-15,150.25
-MSFT,50,2023-02-20,275.50
-GOOGL,25,2023-03-10,105.75
-AMZN,30,2023-01-25,98.50
-SPY,200,2023-01-05,385.50
-QQQ,75,2023-02-15,310.25
-VTI,100,2023-03-01,195.75
-NVDA,40,2023-01-10,165.30
-TSLA,25,2023-02-05,195.80
-META,35,2023-03-20,185.25
+asset_class,description,symbol,shares,purchase_date,purchase_price
+U.S. Large Cap Equity,Apple Inc.,AAPL,100,2023-01-15,150.25
+U.S. Large Cap Equity,Microsoft Corporation,MSFT,50,2023-02-20,275.50
+U.S. Large Cap Equity,Alphabet Inc.,GOOGL,25,2023-03-10,105.75
+U.S. Large Cap Equity,Amazon.com Inc.,AMZN,30,2023-01-25,98.50
+U.S. Large Cap Equity,SPDR S&P 500 ETF Trust,SPY,200,2023-01-05,385.50
+U.S. Large Cap Equity,Invesco QQQ Trust,QQQ,75,2023-02-15,310.25
+U.S. Large Cap Equity,Vanguard Total Stock Market ETF,VTI,100,2023-03-01,195.75
+U.S. Large Cap Equity,NVIDIA Corporation,NVDA,40,2023-01-10,165.30
+U.S. Large Cap Equity,Tesla Inc.,TSLA,25,2023-02-05,195.80
+U.S. Large Cap Equity,Meta Platforms Inc.,META,35,2023-03-20,185.25
