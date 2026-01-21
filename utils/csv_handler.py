@@ -63,7 +63,8 @@ class CSVHandler:
         """
         Parse LTCMA CSV file.
 
-        Expected columns: asset_class, expected_return, volatility, [optional correlation columns]
+        Expected columns: asset_class, compound_return, volatility, arithmetic_return
+        Legacy format also supported: asset_class, expected_return, volatility
 
         Args:
             file_content: CSV file content as bytes
@@ -74,20 +75,46 @@ class CSVHandler:
         try:
             df = pd.read_csv(io.BytesIO(file_content))
 
-            # Validate required columns
-            required_cols = ['asset_class', 'expected_return', 'volatility']
-            missing = [col for col in required_cols if col not in df.columns]
+            # Check for new format (compound_return) or legacy format (expected_return)
+            if 'compound_return' in df.columns:
+                required_cols = ['asset_class', 'compound_return', 'volatility']
+                missing = [col for col in required_cols if col not in df.columns]
 
-            if missing:
-                raise ValueError(f"Missing required columns: {', '.join(missing)}")
+                if missing:
+                    raise ValueError(f"Missing required columns: {', '.join(missing)}")
 
-            # Convert percentages if needed (assumes returns/vol are in percentage form like 7.5)
-            df['expected_return'] = df['expected_return'].apply(
-                lambda x: x / 100 if x > 1 else x
-            )
-            df['volatility'] = df['volatility'].apply(
-                lambda x: x / 100 if x > 1 else x
-            )
+                # Convert percentages if needed (assumes returns/vol are in percentage form like 7.5)
+                df['compound_return'] = df['compound_return'].apply(
+                    lambda x: x / 100 if x > 1 else x
+                )
+                df['volatility'] = df['volatility'].apply(
+                    lambda x: x / 100 if x > 1 else x
+                )
+
+                # Handle arithmetic_return if present
+                if 'arithmetic_return' in df.columns:
+                    df['arithmetic_return'] = df['arithmetic_return'].apply(
+                        lambda x: x / 100 if x > 1 else x
+                    )
+
+                # Create expected_return as alias for compound_return for backward compatibility
+                df['expected_return'] = df['compound_return']
+
+            else:
+                # Legacy format
+                required_cols = ['asset_class', 'expected_return', 'volatility']
+                missing = [col for col in required_cols if col not in df.columns]
+
+                if missing:
+                    raise ValueError(f"Missing required columns: {', '.join(missing)}")
+
+                # Convert percentages if needed (assumes returns/vol are in percentage form like 7.5)
+                df['expected_return'] = df['expected_return'].apply(
+                    lambda x: x / 100 if x > 1 else x
+                )
+                df['volatility'] = df['volatility'].apply(
+                    lambda x: x / 100 if x > 1 else x
+                )
 
             return df
 
@@ -119,16 +146,16 @@ U.S. Government Bonds,iShares 20+ Year Treasury Bond ETF,TLT,50,2023-02-01,95.30
         Returns:
             CSV string template
         """
-        template = """asset_class,expected_return,volatility
-U.S. Large Cap,7.5,17.0
-U.S. Small Cap,8.0,23.0
-International Developed,7.0,18.0
-Emerging Markets,8.5,25.0
-U.S. Investment Grade Bonds,4.5,5.5
-U.S. High Yield Bonds,6.0,12.0
-Commodities,5.5,18.0
-Real Estate,7.0,20.0
-Cash,3.5,1.0
+        template = """asset_class,compound_return,volatility,arithmetic_return
+U.S. Large Cap,6.70,7.64,6.80
+U.S. Mid Cap,7.00,8.55,7.10
+U.S. Small Cap,6.90,8.89,7.00
+U.S. Aggregate Bonds,4.30,4.91,4.30
+U.S. High Yield Bonds,6.10,6.45,6.10
+International Developed (EAFE),7.50,8.90,7.60
+Emerging Markets,7.80,9.24,7.90
+U.S. REITs,8.80,10.15,8.90
+Cash,3.30,3.10,3.30
 """
         return template
 

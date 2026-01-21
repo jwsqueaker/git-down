@@ -462,10 +462,10 @@ def display_correlation_analysis(calculator):
 
 def display_ltcma_analysis():
     """Display LTCMA correlation analysis."""
-    st.header("📉 LTCMA Analysis")
+    st.header("📉 JP Morgan Long-Term Capital Market Assumptions")
 
     if st.session_state.ltcma_data is None:
-        st.info("Upload JP Morgan LTCMA data to analyze correlations with expected returns.")
+        st.info("Upload JP Morgan LTCMA data to analyze long-term expected returns and volatility by asset class.")
 
         # Show template
         with st.expander("Download CSV Template"):
@@ -478,48 +478,115 @@ def display_ltcma_analysis():
             )
         return
 
-    ltcma_df = st.session_state.ltcma_data
+    ltcma_df = st.session_state.ltcma_data.copy()
 
-    st.subheader("LTCMA Expectations")
-    st.dataframe(ltcma_df, use_container_width=True)
+    # Format for display
+    display_df = ltcma_df.copy()
+
+    # Convert to percentages for display
+    if 'compound_return' in display_df.columns:
+        display_df['Compound Return (%)'] = (display_df['compound_return'] * 100).round(2)
+    if 'arithmetic_return' in display_df.columns:
+        display_df['Arithmetic Return (%)'] = (display_df['arithmetic_return'] * 100).round(2)
+    display_df['Volatility (%)'] = (display_df['volatility'] * 100).round(2)
+
+    # Rename and select columns for display
+    display_df = display_df.rename(columns={'asset_class': 'Asset Class'})
+
+    cols_to_show = ['Asset Class', 'Compound Return (%)', 'Volatility (%)']
+    if 'Arithmetic Return (%)' in display_df.columns:
+        cols_to_show.insert(2, 'Arithmetic Return (%)')
+
+    display_df = display_df[cols_to_show]
+
+    st.subheader("📊 Long-Term Capital Market Assumptions")
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
 
     # Display as chart
+    st.subheader("Expected Returns by Asset Class")
+
     fig = go.Figure()
 
+    # Use compound_return if available, otherwise expected_return
+    return_col = 'compound_return' if 'compound_return' in ltcma_df.columns else 'expected_return'
+
+    # Sort by return for better visualization
+    plot_df = ltcma_df.sort_values(return_col, ascending=True)
+
     fig.add_trace(go.Bar(
-        x=ltcma_df['asset_class'],
-        y=ltcma_df['expected_return'] * 100,
+        y=plot_df['asset_class'],
+        x=plot_df[return_col] * 100,
         name='Expected Return',
-        marker_color='#1f77b4'
+        marker_color='#1f77b4',
+        orientation='h'
     ))
 
     fig.update_layout(
         title="LTCMA Expected Returns by Asset Class",
-        xaxis_title="Asset Class",
-        yaxis_title="Expected Return (%)",
-        height=500
+        yaxis_title="Asset Class",
+        xaxis_title="Expected Compound Return (%)",
+        height=max(500, len(ltcma_df) * 25),
+        showlegend=False
     )
 
     st.plotly_chart(fig, use_container_width=True)
 
     # Risk-Return scatter
-    st.subheader("Risk-Return Profile")
+    st.subheader("Risk-Return Efficient Frontier")
 
     fig = px.scatter(
         ltcma_df,
         x='volatility',
-        y='expected_return',
+        y=return_col,
         text='asset_class',
         labels={
-            'volatility': 'Volatility (Risk)',
-            'expected_return': 'Expected Return'
-        }
+            'volatility': 'Volatility (Risk) %',
+            return_col: 'Expected Return %'
+        },
+        hover_data={'asset_class': True, 'volatility': ':.2f', return_col: ':.2f'}
     )
 
-    fig.update_traces(textposition='top center')
-    fig.update_layout(height=500)
+    # Convert to percentage for display
+    fig.update_traces(
+        textposition='top center',
+        textfont_size=8,
+        marker=dict(size=10, color='#1f77b4')
+    )
+
+    # Update axes to show percentages
+    fig.update_xaxes(tickformat='.1f', title='Volatility (%)')
+    fig.update_yaxes(tickformat='.1f', title='Expected Return (%)')
+
+    # Scale values to percentages
+    fig.data[0].x = fig.data[0].x * 100
+    fig.data[0].y = fig.data[0].y * 100
+
+    fig.update_layout(height=600)
 
     st.plotly_chart(fig, use_container_width=True)
+
+    # Summary statistics
+    st.subheader("Summary Statistics")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        avg_return = ltcma_df[return_col].mean() * 100
+        st.metric("Average Expected Return", f"{avg_return:.2f}%")
+
+    with col2:
+        avg_vol = ltcma_df['volatility'].mean() * 100
+        st.metric("Average Volatility", f"{avg_vol:.2f}%")
+
+    with col3:
+        max_return = ltcma_df[return_col].max() * 100
+        best_asset = ltcma_df.loc[ltcma_df[return_col].idxmax(), 'asset_class']
+        st.metric("Highest Return", f"{max_return:.2f}%", delta=best_asset)
+
+    with col4:
+        min_vol = ltcma_df['volatility'].min() * 100
+        safest_asset = ltcma_df.loc[ltcma_df['volatility'].idxmin(), 'asset_class']
+        st.metric("Lowest Volatility", f"{min_vol:.2f}%", delta=safest_asset)
 
 
 def display_monte_carlo_simulation(calculator):
