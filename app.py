@@ -188,6 +188,42 @@ def display_performance_metrics(calculator, period='1Y'):
     with col2:
         st.info(f"📅 Analysis Period: {start_date} to {end_date}")
 
+    # Get historical data first for debugging
+    hist_data = calculator.calculate_historical_values(start_date, end_date)
+
+    # Show calculation details
+    with st.expander("🔍 Calculation Details (Debug Info)"):
+        if not hist_data.empty:
+            st.write(f"**Data Points:** {len(hist_data)}")
+            st.write(f"**Start Date:** {hist_data.index[0]}")
+            st.write(f"**End Date:** {hist_data.index[-1]}")
+            st.write(f"**Starting Portfolio Value:** {format_currency(hist_data['value'].iloc[0])}")
+            st.write(f"**Ending Portfolio Value:** {format_currency(hist_data['value'].iloc[-1])}")
+            st.write(f"**Starting Cost Basis:** {format_currency(hist_data['cost_basis'].iloc[0])}")
+            st.write(f"**Ending Cost Basis:** {format_currency(hist_data['cost_basis'].iloc[-1])}")
+
+            # Calculate simple total return
+            simple_return = (hist_data['value'].iloc[-1] / hist_data['value'].iloc[0] - 1) * 100
+            st.write(f"**Simple Total Return:** {simple_return:.2f}%")
+
+            # Show if there were cash flows
+            cost_change = hist_data['cost_basis'].iloc[-1] - hist_data['cost_basis'].iloc[0]
+            if abs(cost_change) > 0.01:
+                st.warning(f"⚠️ Net cash flows detected: {format_currency(cost_change)}")
+                st.write("Returns are adjusted for cash flows (money added/removed)")
+            else:
+                st.success("✓ No cash flows - simple return calculation applies")
+
+            # Show sample of data
+            st.write("**Sample Data (first 5 rows):**")
+            sample = hist_data.head().copy()
+            sample['value'] = sample['value'].apply(format_currency)
+            sample['cost_basis'] = sample['cost_basis'].apply(format_currency)
+            sample['returns'] = sample['returns'].apply(lambda x: f"{x*100:.2f}%" if pd.notna(x) else "N/A")
+            st.dataframe(sample)
+        else:
+            st.error("No historical data available for this period")
+
     # Calculate metrics
     with st.spinner("Calculating performance metrics..."):
         metrics = calculator.calculate_performance_metrics(
