@@ -58,7 +58,7 @@ class PortfolioCalculator:
     def calculate_historical_values(self, start_date: str,
                                     end_date: Optional[str] = None) -> pd.DataFrame:
         """
-        Calculate historical portfolio values with proper handling of positions bought at different times.
+        Calculate historical portfolio values - SIMPLIFIED for accuracy.
 
         Args:
             start_date: Start date (YYYY-MM-DD)
@@ -87,66 +87,45 @@ class PortfolioCalculator:
         # Create DataFrame of prices
         prices_df = pd.DataFrame(all_prices)
 
-        # Calculate position values and track cost basis
-        values_df = pd.DataFrame()
-        cost_basis_df = pd.DataFrame()
+        # Calculate daily portfolio value
+        daily_values = []
+        daily_cost_basis = []
 
-        for position in self.positions:
-            if position.symbol in prices_df.columns:
-                # Only include data after purchase date
-                position_prices = prices_df[position.symbol].copy()
+        for date in prices_df.index:
+            date_as_date = date.date()
 
-                # Create mask for dates on or after purchase
-                mask = prices_df.index.date >= position.purchase_date
+            # Calculate portfolio value on this date
+            total_value = 0
+            total_cost = 0
 
-                # Set values to NaN before purchase (will be dropped later)
-                position_prices[~mask] = np.nan
+            for position in self.positions:
+                # Only include position if it's been purchased by this date
+                if date_as_date >= position.purchase_date and position.symbol in prices_df.columns:
+                    price = prices_df.loc[date, position.symbol]
+                    if pd.notna(price):
+                        total_value += price * position.shares
+                        total_cost += position.cost_basis
 
-                # Calculate position value
-                position_value = position_prices * position.shares
-                values_df[position.symbol] = position_value
+            daily_values.append(total_value)
+            daily_cost_basis.append(total_cost)
 
-                # Track cost basis (only after purchase)
-                cost_basis = pd.Series(np.nan, index=prices_df.index)
-                cost_basis[mask] = position.cost_basis
-                cost_basis_df[position.symbol] = cost_basis
-
-        # Calculate total portfolio value and cost basis (sum across positions, ignoring NaN)
-        portfolio_value = values_df.sum(axis=1, min_count=1)  # min_count=1 means need at least 1 non-NaN
-        total_cost_basis = cost_basis_df.sum(axis=1, min_count=1)
-
-        # Remove dates where we have no positions
-        valid_mask = ~portfolio_value.isna()
-        portfolio_value = portfolio_value[valid_mask]
-        total_cost_basis = total_cost_basis[valid_mask]
-
-        # Calculate returns with cash flow adjustments
-        portfolio_returns = pd.Series(index=portfolio_value.index, dtype=float)
-
-        for i in range(1, len(portfolio_value)):
-            prev_value = portfolio_value.iloc[i-1]
-            curr_value = portfolio_value.iloc[i]
-
-            # Check for cash flows (new positions added)
-            prev_cost = total_cost_basis.iloc[i-1]
-            curr_cost = total_cost_basis.iloc[i]
-            cash_flow = curr_cost - prev_cost
-
-            if prev_value > 0:
-                # Cash-flow adjusted return
-                portfolio_returns.iloc[i] = (curr_value - prev_value - cash_flow) / prev_value
-            else:
-                # First day of portfolio or prev_value is 0
-                portfolio_returns.iloc[i] = np.nan
-
-        # Create result DataFrame
+        # Create DataFrame
         result = pd.DataFrame({
-            'value': portfolio_value,
-            'cost_basis': total_cost_basis,
-            'returns': portfolio_returns
-        })
+            'value': daily_values,
+            'cost_basis': daily_cost_basis
+        }, index=prices_df.index)
 
-        return result.dropna(subset=['value'])
+        # Remove days with zero portfolio value
+        result = result[result['value'] > 0]
+
+        # Calculate simple daily returns
+        result['returns'] = result['value'].pct_change()
+
+        # Note: This is simple pct_change and doesn't adjust for cash flows
+        # If positions were added during the period, returns will include that effect
+        # For cash-flow adjusted returns, use calculate_time_weighted_return()
+
+        return result
 
     def calculate_returns(self, start_date: str,
                          end_date: Optional[str] = None) -> pd.Series:
@@ -238,6 +217,102 @@ class PortfolioCalculator:
             treynor_ratio=metrics_dict.get('treynor_ratio'),
             information_ratio=metrics_dict.get('information_ratio')
         )
+
+    def calculate_multi_period_returns(self) -> Dict[str, Dict]:
+        """
+        Calculate returns for multiple standard periods.
+
+        Returns:
+            Dictionary with period names as keys and metrics as values
+        """
+        periods = {
+            '1 Year': 365,
+            '2 Year': 365 * 2,
+            '3 Year': 365 * 3,
+            '4 Year': 365 * 4,
+            '5 Year': 365 * 5,
+            '8 Year': 365 * 8,
+            '10 Year': 365 * 10
+        }
+
+        results = {}
+        end_date = datetime.now().strftime('%Y-%m-%d')
+
+        # Get inception date
+        if self.positions:
+            inception_date = min(p.purchase_date for p in self.positions)
+        else:
+            return results
+
+        for period_name, days in periods.items():
+            start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+
+            # Don't calculate if period is before inception
+            if datetime.strptime(start_date, '%Y-%m-%d').date() < inception_date:
+                continue
+
+            try:
+                hist_data = self.calculate_historical_values(start_date, end_date)
+
+                if not hist_data.empty and len(hist_data) > 1:
+                    start_value = hist_data['value'].iloc[0]
+                    end_value = hist_data['value'].iloc[-1]
+
+                    # Calculate total return
+                    total_return = (end_value / start_value - 1) * 100
+
+                    # Calculate annualized return
+                    actual_days = (hist_data.index[-1] - hist_data.index[0]).days
+                    years = actual_days / 365.25
+                    if years > 0:
+                        annualized_return = ((end_value / start_value) ** (1 / years) - 1) * 100
+                    else:
+                        annualized_return = total_return
+
+                    results[period_name] = {
+                        'total_return': total_return,
+                        'annualized_return': annualized_return,
+                        'start_value': start_value,
+                        'end_value': end_value,
+                        'start_date': hist_data.index[0].strftime('%Y-%m-%d'),
+                        'end_date': hist_data.index[-1].strftime('%Y-%m-%d'),
+                        'days': actual_days
+                    }
+            except Exception as e:
+                print(f"Error calculating {period_name} return: {e}")
+                continue
+
+        # Add "Since Inception"
+        try:
+            start_date = inception_date.strftime('%Y-%m-%d')
+            hist_data = self.calculate_historical_values(start_date, end_date)
+
+            if not hist_data.empty and len(hist_data) > 1:
+                start_value = hist_data['value'].iloc[0]
+                end_value = hist_data['value'].iloc[-1]
+
+                total_return = (end_value / start_value - 1) * 100
+
+                actual_days = (hist_data.index[-1] - hist_data.index[0]).days
+                years = actual_days / 365.25
+                if years > 0:
+                    annualized_return = ((end_value / start_value) ** (1 / years) - 1) * 100
+                else:
+                    annualized_return = total_return
+
+                results['Since Inception'] = {
+                    'total_return': total_return,
+                    'annualized_return': annualized_return,
+                    'start_value': start_value,
+                    'end_value': end_value,
+                    'start_date': hist_data.index[0].strftime('%Y-%m-%d'),
+                    'end_date': hist_data.index[-1].strftime('%Y-%m-%d'),
+                    'days': actual_days
+                }
+        except Exception as e:
+            print(f"Error calculating inception return: {e}")
+
+        return results
 
     def compare_to_benchmark(
         self,

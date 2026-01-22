@@ -266,6 +266,63 @@ def display_performance_metrics(calculator, period='1Y'):
             if metrics_dict.get('Information Ratio'):
                 st.metric("Information Ratio", metrics_dict['Information Ratio'])
 
+    # Multi-Period Returns Table
+    st.subheader("📅 Returns by Period")
+
+    with st.spinner("Calculating multi-period returns..."):
+        multi_period_returns = calculator.calculate_multi_period_returns()
+
+    if multi_period_returns:
+        # Create DataFrame for display
+        returns_data = []
+        for period, data in multi_period_returns.items():
+            returns_data.append({
+                'Period': period,
+                'Total Return': f"{data['total_return']:.2f}%",
+                'Annualized Return': f"{data['annualized_return']:.2f}%",
+                'Start Date': data['start_date'],
+                'End Date': data['end_date'],
+                'Days': data['days']
+            })
+
+        returns_df = pd.DataFrame(returns_data)
+
+        # Display the table
+        st.dataframe(returns_df, use_container_width=True, hide_index=True)
+
+        # Show a bar chart of returns
+        fig_returns = go.Figure()
+
+        fig_returns.add_trace(go.Bar(
+            x=[r['Period'] for r in returns_data],
+            y=[float(r['Total Return'].replace('%', '')) for r in returns_data],
+            name='Total Return',
+            marker_color='lightblue',
+            text=[r['Total Return'] for r in returns_data],
+            textposition='outside'
+        ))
+
+        fig_returns.add_trace(go.Bar(
+            x=[r['Period'] for r in returns_data],
+            y=[float(r['Annualized Return'].replace('%', '')) for r in returns_data],
+            name='Annualized Return',
+            marker_color='darkblue',
+            text=[r['Annualized Return'] for r in returns_data],
+            textposition='outside'
+        ))
+
+        fig_returns.update_layout(
+            title="Returns by Time Period",
+            xaxis_title="Period",
+            yaxis_title="Return (%)",
+            barmode='group',
+            height=400
+        )
+
+        st.plotly_chart(fig_returns, use_container_width=True)
+    else:
+        st.info("Not enough historical data to calculate multi-period returns")
+
     # Historical performance chart
     st.subheader("Historical Performance")
 
