@@ -1,0 +1,25 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Downtown LA Hotspot",
+        "priority": "high",
+        "description": "High traffic area with frequent pothole reports"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-118.2437, 34.0522],
+            [-118.2437, 34.0622],
+            [-118.2337, 34.0622],
+            [-118.2337, 34.0522],
+            [-118.2437, 34.0522]
+          ]
+        ]
+      }
+    }
+  ]
+}
