@@ -1643,30 +1643,20 @@ def display_tax_planning(calculator):
     Identify tax-loss harvesting opportunities, optimize withdrawal strategies, and minimize your tax burden.
     """)
 
-    tax_planner = TaxPlanner()
     snapshot = calculator.get_snapshot()
 
-    # Get positions data
-    positions_data = []
-    for pos in snapshot.positions:
-        positions_data.append({
-            'symbol': pos.symbol,
-            'cost_basis': pos.cost_basis,
-            'current_value': pos.current_value,
-            'purchase_date': pos.purchase_date
-        })
-
-    positions_df = pd.DataFrame(positions_data)
-
-    if positions_df.empty:
+    if not snapshot.positions:
         st.warning("No positions available for tax analysis")
         return
+
+    # Initialize TaxPlanner with positions
+    tax_planner = TaxPlanner(snapshot.positions)
 
     # Tax-Loss Harvesting Opportunities
     st.subheader("📉 Tax-Loss Harvesting Opportunities")
 
     try:
-        tlh_opportunities = tax_planner.identify_tax_loss_harvest_opportunities(positions_df)
+        tlh_opportunities = tax_planner.identify_tax_loss_harvest_opportunities(min_loss_threshold=1000.0)
 
         if tlh_opportunities.empty:
             st.success("✓ No tax-loss harvesting opportunities found. All positions are profitable!")
@@ -1675,21 +1665,20 @@ def display_tax_planning(calculator):
 
             # Format for display
             display_df = tlh_opportunities.copy()
-            display_df['cost_basis'] = display_df['cost_basis'].apply(format_currency)
-            display_df['current_value'] = display_df['current_value'].apply(format_currency)
-            display_df['unrealized_loss'] = display_df['unrealized_loss'].apply(format_currency)
-            display_df['potential_tax_savings'] = display_df['potential_tax_savings'].apply(format_currency)
+            display_df['unrealized_gain_loss'] = display_df['unrealized_gain_loss'].apply(format_currency)
+            display_df['estimated_tax_benefit'] = display_df['estimated_tax_benefit'].apply(format_currency)
+            display_df['gain_loss_pct'] = display_df['gain_loss_pct'].apply(lambda x: f"{x:.2f}%")
 
             st.dataframe(display_df, use_container_width=True)
 
-            total_losses = tlh_opportunities['unrealized_loss'].sum()
-            total_savings = tlh_opportunities['potential_tax_savings'].sum()
+            total_losses = tlh_opportunities['unrealized_gain_loss'].sum()
+            total_benefit = tlh_opportunities['estimated_tax_benefit'].sum()
 
             col1, col2 = st.columns(2)
             with col1:
                 st.metric("Total Harvestable Losses", format_currency(abs(total_losses)))
             with col2:
-                st.metric("Potential Tax Savings", format_currency(total_savings))
+                st.metric("Estimated Tax Benefit", format_currency(abs(total_benefit)))
     except Exception as e:
         st.error(f"Error analyzing tax-loss harvesting: {e}")
 
@@ -1697,39 +1686,71 @@ def display_tax_planning(calculator):
     st.subheader("📈 Unrealized Gains Analysis")
 
     try:
-        gains_analysis = tax_planner.calculate_unrealized_gains(positions_df)
+        gains_df = tax_planner.calculate_unrealized_gains()
 
-        col1, col2, col3, col4 = st.columns(4)
+        if not gains_df.empty:
+            total_unrealized = gains_df['unrealized_gain_loss'].sum()
+            long_term_gains = gains_df[gains_df['is_long_term']]['unrealized_gain_loss'].sum()
+            short_term_gains = gains_df[~gains_df['is_long_term']]['unrealized_gain_loss'].sum()
 
-        with col1:
-            st.metric("Total Unrealized Gains", format_currency(gains_analysis['total_unrealized_gains']))
-        with col2:
-            st.metric("Short-Term Gains", format_currency(gains_analysis['short_term_gains']))
-        with col3:
-            st.metric("Long-Term Gains", format_currency(gains_analysis['long_term_gains']))
-        with col4:
-            est_tax = gains_analysis['estimated_tax_if_sold']
-            st.metric("Est. Tax If Sold", format_currency(est_tax))
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                st.metric("Total Unrealized Gains", format_currency(total_unrealized))
+            with col2:
+                st.metric("Long-Term Gains", format_currency(long_term_gains))
+            with col3:
+                st.metric("Short-Term Gains", format_currency(short_term_gains))
+
+            # Display details
+            st.dataframe(
+                gains_df[['symbol', 'shares', 'cost_basis', 'current_value',
+                         'unrealized_gain_loss', 'gain_loss_pct', 'holding_days', 'is_long_term']],
+                use_container_width=True
+            )
+        else:
+            st.info("No unrealized gains data available")
 
     except Exception as e:
         st.error(f"Error calculating unrealized gains: {e}")
 
-    # Tax Bracket Input
-    st.subheader("⚙️ Tax Settings")
+    # Tax Impact Estimation
+    st.subheader("⚙️ Annual Tax Impact Estimation")
 
     col1, col2 = st.columns(2)
     with col1:
-        filing_status = st.selectbox(
-            "Filing Status",
-            ["single", "married_joint", "married_separate", "head_of_household"],
-            format_func=lambda x: x.replace("_", " ").title()
+        ordinary_income = st.number_input(
+            "Annual Ordinary Income ($)",
+            min_value=0.0,
+            value=100000.0,
+            step=10000.0
         )
     with col2:
-        capital_gains_rate = st.slider(
-            "Long-Term Capital Gains Rate (%)",
-            0.0, 23.8, 15.0, 0.1,
-            help="Federal long-term capital gains rate (0%, 15%, or 20% + 3.8% NIIT)"
+        dividend_income = st.number_input(
+            "Expected Dividend Income ($)",
+            min_value=0.0,
+            value=0.0,
+            step=1000.0
         )
+
+    if st.button("Calculate Tax Impact"):
+        try:
+            tax_impact = tax_planner.estimate_annual_tax_impact(
+                realized_gains=0.0,
+                realized_losses=0.0,
+                dividend_income=dividend_income,
+                ordinary_income=ordinary_income
+            )
+
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Dividend Tax", format_currency(tax_impact['dividend_tax']))
+            with col2:
+                st.metric("Total Investment Tax", format_currency(tax_impact['total_investment_tax']))
+            with col3:
+                st.metric("Effective Rate", f"{tax_impact['effective_rate']:.2f}%")
+        except Exception as e:
+            st.error(f"Error calculating tax impact: {e}")
 
 
 def display_rebalancing(calculator):
@@ -1740,11 +1761,15 @@ def display_rebalancing(calculator):
     Analyze your current allocation vs targets and get specific trade recommendations.
     """)
 
-    rebalancer = RebalancingAssistant()
     snapshot = calculator.get_snapshot()
 
-    # Get current allocation
-    current_allocation = snapshot.get_allocation()
+    if not snapshot.positions:
+        st.warning("No positions available for rebalancing analysis")
+        return
+
+    # Get current allocation (as decimal weights)
+    current_allocation_pct = snapshot.get_allocation()
+    current_allocation = {k: v / 100.0 for k, v in current_allocation_pct.items() if k != 'CASH'}
 
     if not current_allocation:
         st.warning("No positions available for rebalancing analysis")
@@ -1755,83 +1780,83 @@ def display_rebalancing(calculator):
 
     st.markdown("Set your target allocation percentages (must sum to 100%):")
 
-    target_allocation = {}
+    target_allocation_pct = {}
     cols = st.columns(len(current_allocation))
 
-    for idx, (symbol, current_pct) in enumerate(current_allocation.items()):
+    for idx, (symbol, current_weight) in enumerate(current_allocation.items()):
         with cols[idx]:
             target_pct = st.number_input(
                 symbol,
                 min_value=0.0,
                 max_value=100.0,
-                value=float(current_pct),
+                value=float(current_weight * 100),
                 step=0.1,
                 key=f"target_{symbol}"
             )
-            target_allocation[symbol] = target_pct
+            target_allocation_pct[symbol] = target_pct
 
-    total_target = sum(target_allocation.values())
+    total_target = sum(target_allocation_pct.values())
 
     if abs(total_target - 100.0) > 0.1:
         st.error(f"⚠️ Target allocation sums to {total_target:.1f}% (must be 100%)")
         return
 
+    # Convert to decimal weights
+    target_allocation = {k: v / 100.0 for k, v in target_allocation_pct.items()}
+
+    # Rebalancing threshold
+    threshold = st.slider(
+        "Rebalancing Tolerance (%)",
+        0.5, 10.0, 5.0, 0.5,
+        help="Only rebalance positions that drift more than this amount"
+    ) / 100.0  # Convert to decimal
+
+    # Initialize RebalancingAssistant with positions and target allocation
+    rebalancer = RebalancingAssistant(
+        positions=snapshot.positions,
+        target_allocation=target_allocation,
+        tolerance=threshold
+    )
+
     # Calculate drift
     st.subheader("📊 Allocation Drift")
 
     try:
-        drift = rebalancer.calculate_drift(current_allocation, target_allocation)
+        drift_df = rebalancer.calculate_drift()
 
-        drift_df = pd.DataFrame([
-            {
-                'Symbol': symbol,
-                'Current %': current_allocation.get(symbol, 0),
-                'Target %': target_allocation.get(symbol, 0),
-                'Drift %': drift_amt
-            }
-            for symbol, drift_amt in drift.items()
-        ])
+        if not drift_df.empty:
+            # Format for display
+            display_drift = drift_df.copy()
+            display_drift['current_weight'] = display_drift['current_weight'].apply(lambda x: f"{x*100:.2f}%")
+            display_drift['target_weight'] = display_drift['target_weight'].apply(lambda x: f"{x*100:.2f}%")
+            display_drift['drift'] = display_drift['drift'].apply(lambda x: f"{x*100:.2f}%")
+            display_drift['drift_pct'] = display_drift['drift_pct'].apply(lambda x: f"{x:.2f}%")
 
-        # Color code drift
-        def color_drift(val):
-            if abs(val) < 1:
-                return 'background-color: lightgreen'
-            elif abs(val) < 5:
-                return 'background-color: lightyellow'
-            else:
-                return 'background-color: lightcoral'
-
-        styled_df = drift_df.style.applymap(color_drift, subset=['Drift %'])
-        st.dataframe(styled_df, use_container_width=True)
-
-        # Rebalancing threshold
-        threshold = st.slider(
-            "Rebalancing Threshold (%)",
-            0.5, 10.0, 5.0, 0.5,
-            help="Only rebalance positions that drift more than this amount"
-        )
+            st.dataframe(display_drift, use_container_width=True)
 
         # Generate trades
         st.subheader("💼 Recommended Trades")
 
-        total_value = snapshot.total_value
         trades = rebalancer.generate_rebalancing_trades(
-            current_allocation,
-            target_allocation,
-            total_value,
-            threshold=threshold
+            total_portfolio_value=snapshot.total_value,
+            additional_contribution=0.0
         )
 
-        if trades.empty:
-            st.success(f"✓ Portfolio is within {threshold}% of target allocation. No rebalancing needed!")
+        if not trades or len(trades) == 0:
+            st.success(f"✓ Portfolio is within tolerance. No rebalancing needed!")
         else:
             st.info(f"Found {len(trades)} recommended trades")
 
-            # Format trades
-            display_trades = trades.copy()
-            display_trades['amount'] = display_trades['amount'].apply(format_currency)
+            # Convert to DataFrame and format
+            trades_df = pd.DataFrame(trades)
+            display_trades = trades_df.copy()
+            display_trades['value'] = display_trades['value'].apply(format_currency)
+            display_trades['current_value'] = display_trades['current_value'].apply(format_currency)
+            display_trades['target_value'] = display_trades['target_value'].apply(format_currency)
+            display_trades['shares'] = display_trades['shares'].apply(lambda x: f"{x:.2f}")
 
-            st.dataframe(display_trades, use_container_width=True)
+            st.dataframe(display_trades[['symbol', 'action', 'shares', 'value', 'current_value', 'target_value']],
+                        use_container_width=True)
 
     except Exception as e:
         st.error(f"Error calculating rebalancing: {e}")
@@ -1845,68 +1870,75 @@ def display_dividends(calculator):
     Track dividend income, analyze yield trends, and project future dividend payments.
     """)
 
-    dividend_tracker = DividendTracker()
     snapshot = calculator.get_snapshot()
 
-    # Get symbols from portfolio
-    symbols = [pos.symbol for pos in snapshot.positions]
-
-    if not symbols:
+    if not snapshot.positions:
         st.warning("No positions available for dividend analysis")
         return
+
+    # Initialize DividendTracker with positions
+    dividend_tracker = DividendTracker(snapshot.positions)
 
     st.subheader("📊 Dividend Summary")
 
     # Fetch dividend data
     with st.spinner("Fetching dividend data..."):
         try:
-            div_data = dividend_tracker.fetch_dividend_data(symbols)
+            div_data = dividend_tracker.fetch_dividend_data(years_back=2)
 
             if div_data.empty:
                 st.info("No dividend data found for your holdings")
                 return
 
             # Calculate metrics
-            total_annual_div = div_data.groupby('symbol')['amount'].sum().sum()
+            total_annual_div = div_data['total_dividend'].sum()
 
             col1, col2, col3 = st.columns(3)
 
             with col1:
-                st.metric("Annual Dividend Income", format_currency(total_annual_div))
+                st.metric("Total Dividend Income (2 years)", format_currency(total_annual_div))
             with col2:
                 portfolio_value = snapshot.total_value
-                yield_pct = (total_annual_div / portfolio_value * 100) if portfolio_value > 0 else 0
-                st.metric("Portfolio Yield", f"{yield_pct:.2f}%")
+                yield_pct = (total_annual_div / portfolio_value / 2 * 100) if portfolio_value > 0 else 0
+                st.metric("Estimated Annual Yield", f"{yield_pct:.2f}%")
             with col3:
-                monthly_avg = total_annual_div / 12
-                st.metric("Monthly Average", format_currency(monthly_avg))
+                num_payments = len(div_data)
+                st.metric("Total Dividend Payments", num_payments)
 
             # Dividend by stock
             st.subheader("💰 Dividend Income by Holding")
 
-            div_by_symbol = div_data.groupby('symbol')['amount'].sum().reset_index()
-            div_by_symbol.columns = ['Symbol', 'Annual Dividend']
-            div_by_symbol = div_by_symbol.sort_values('Annual Dividend', ascending=False)
+            div_by_symbol = div_data.groupby('symbol')['total_dividend'].sum().reset_index()
+            div_by_symbol.columns = ['Symbol', 'Total Dividends']
+            div_by_symbol = div_by_symbol.sort_values('Total Dividends', ascending=False)
 
             fig = px.bar(
                 div_by_symbol,
                 x='Symbol',
-                y='Annual Dividend',
-                title="Annual Dividend Income by Stock"
+                y='Total Dividends',
+                title="Total Dividend Income by Stock (2 years)"
             )
             st.plotly_chart(fig, use_container_width=True)
 
-            # Dividend calendar
-            st.subheader("📅 Upcoming Dividends")
+            # Yield on Cost Analysis
+            st.subheader("📈 Yield on Cost")
 
-            future_divs = div_data[div_data['ex_date'] > datetime.now().date()].copy()
+            yield_df = dividend_tracker.calculate_dividend_yield_on_cost()
 
-            if not future_divs.empty:
-                future_divs = future_divs.sort_values('ex_date')
-                future_divs['amount'] = future_divs['amount'].apply(format_currency)
-                st.dataframe(future_divs[['symbol', 'ex_date', 'pay_date', 'amount']], use_container_width=True)
+            if not yield_df.empty:
+                display_yield = yield_df.copy()
+                display_yield['purchase_price'] = display_yield['purchase_price'].apply(format_currency)
+                display_yield['current_price'] = display_yield['current_price'].apply(lambda x: format_currency(x) if x else 'N/A')
+                display_yield['annual_dividend_per_share'] = display_yield['annual_dividend_per_share'].apply(format_currency)
+                display_yield['current_yield'] = display_yield['current_yield'].apply(lambda x: f"{x*100:.2f}%" if x else 'N/A')
+                display_yield['yield_on_cost'] = display_yield['yield_on_cost'].apply(lambda x: f"{x*100:.2f}%")
+                display_yield['annual_income'] = display_yield['annual_income'].apply(format_currency)
+
+                st.dataframe(display_yield[['symbol', 'shares', 'annual_dividend_per_share',
+                                           'current_yield', 'yield_on_cost', 'annual_income']],
+                            use_container_width=True)
             else:
-                st.info("No upcoming dividend payments in the next quarter")
+                st.info("No yield data available")
 
         except Exception as e:
             st.error(f"Error fetching dividend data: {e}")
@@ -1920,14 +1952,13 @@ def display_optimization(calculator):
     Optimize your portfolio using Modern Portfolio Theory to maximize risk-adjusted returns.
     """)
 
-    optimizer = PortfolioOptimizer()
     snapshot = calculator.get_snapshot()
 
-    symbols = [pos.symbol for pos in snapshot.positions]
-
-    if len(symbols) < 2:
+    if len(snapshot.positions) < 2:
         st.warning("Need at least 2 positions for portfolio optimization")
         return
+
+    symbols = [pos.symbol for pos in snapshot.positions]
 
     st.subheader("⚙️ Optimization Settings")
 
@@ -1937,7 +1968,7 @@ def display_optimization(calculator):
         period = st.selectbox(
             "Historical Period",
             ["1y", "2y", "3y", "5y"],
-            index=2,
+            index=1,
             help="Period for calculating historical returns and correlations"
         )
 
@@ -1952,14 +1983,28 @@ def display_optimization(calculator):
         with st.spinner("Optimizing portfolio... This may take a minute"):
             try:
                 # Fetch historical data
-                optimizer.fetch_historical_data(symbols, period=period)
+                import yfinance as yf
 
-                # Calculate metrics
-                returns = optimizer.calculate_expected_returns()
-                cov_matrix = optimizer.calculate_covariance_matrix()
+                period_map = {"1y": "1y", "2y": "2y", "3y": "3y", "5y": "5y"}
+                data = yf.download(symbols, period=period_map[period], progress=False)
+
+                if 'Adj Close' in data.columns:
+                    prices = data['Adj Close']
+                else:
+                    prices = data['Close']
+
+                # Calculate daily returns
+                returns = prices.pct_change().dropna()
+
+                if returns.empty or len(returns) < 50:
+                    st.error("Insufficient historical data for optimization")
+                    return
+
+                # Initialize PortfolioOptimizer with returns DataFrame
+                optimizer = PortfolioOptimizer(returns, risk_free_rate=risk_free_rate)
 
                 # Find optimal portfolios
-                max_sharpe = optimizer.find_max_sharpe_portfolio(risk_free_rate)
+                max_sharpe = optimizer.find_max_sharpe_portfolio()
                 min_vol = optimizer.find_min_volatility_portfolio()
 
                 # Display results
@@ -1969,9 +2014,9 @@ def display_optimization(calculator):
 
                 with col1:
                     st.markdown("**Maximum Sharpe Ratio Portfolio**")
-                    st.metric("Expected Return", f"{max_sharpe['return']*100:.2f}%")
+                    st.metric("Expected Return", f"{max_sharpe['expected_return']*100:.2f}%")
                     st.metric("Volatility", f"{max_sharpe['volatility']*100:.2f}%")
-                    st.metric("Sharpe Ratio", f"{max_sharpe['sharpe']:.2f}")
+                    st.metric("Sharpe Ratio", f"{max_sharpe['sharpe_ratio']:.2f}")
 
                     st.markdown("**Weights:**")
                     for symbol, weight in max_sharpe['weights'].items():
@@ -1980,8 +2025,9 @@ def display_optimization(calculator):
 
                 with col2:
                     st.markdown("**Minimum Volatility Portfolio**")
-                    st.metric("Expected Return", f"{min_vol['return']*100:.2f}%")
+                    st.metric("Expected Return", f"{min_vol['expected_return']*100:.2f}%")
                     st.metric("Volatility", f"{min_vol['volatility']*100:.2f}%")
+                    st.metric("Sharpe Ratio", f"{min_vol['sharpe_ratio']:.2f}")
 
                     st.markdown("**Weights:**")
                     for symbol, weight in min_vol['weights'].items():
@@ -1991,50 +2037,51 @@ def display_optimization(calculator):
                 # Efficient Frontier
                 st.subheader("📊 Efficient Frontier")
 
-                frontier = optimizer.generate_efficient_frontier(risk_free_rate, num_portfolios=100)
+                frontier = optimizer.generate_efficient_frontier(num_portfolios=50)
 
-                fig = go.Figure()
+                if not frontier.empty:
+                    fig = go.Figure()
 
-                # Plot frontier
-                fig.add_trace(go.Scatter(
-                    x=frontier['volatility'] * 100,
-                    y=frontier['return'] * 100,
-                    mode='markers',
-                    marker=dict(
-                        size=5,
-                        color=frontier['sharpe'],
-                        colorscale='Viridis',
-                        showscale=True,
-                        colorbar=dict(title="Sharpe Ratio")
-                    ),
-                    name='Efficient Frontier'
-                ))
+                    # Plot frontier
+                    fig.add_trace(go.Scatter(
+                        x=frontier['volatility'] * 100,
+                        y=frontier['return'] * 100,
+                        mode='markers',
+                        marker=dict(
+                            size=5,
+                            color=frontier['sharpe_ratio'],
+                            colorscale='Viridis',
+                            showscale=True,
+                            colorbar=dict(title="Sharpe Ratio")
+                        ),
+                        name='Efficient Frontier'
+                    ))
 
-                # Mark optimal portfolios
-                fig.add_trace(go.Scatter(
-                    x=[max_sharpe['volatility'] * 100],
-                    y=[max_sharpe['return'] * 100],
-                    mode='markers',
-                    marker=dict(size=15, color='red', symbol='star'),
-                    name='Max Sharpe'
-                ))
+                    # Mark optimal portfolios
+                    fig.add_trace(go.Scatter(
+                        x=[max_sharpe['volatility'] * 100],
+                        y=[max_sharpe['expected_return'] * 100],
+                        mode='markers',
+                        marker=dict(size=15, color='red', symbol='star'),
+                        name='Max Sharpe'
+                    ))
 
-                fig.add_trace(go.Scatter(
-                    x=[min_vol['volatility'] * 100],
-                    y=[min_vol['return'] * 100],
-                    mode='markers',
-                    marker=dict(size=15, color='green', symbol='star'),
-                    name='Min Volatility'
-                ))
+                    fig.add_trace(go.Scatter(
+                        x=[min_vol['volatility'] * 100],
+                        y=[min_vol['expected_return'] * 100],
+                        mode='markers',
+                        marker=dict(size=15, color='green', symbol='star'),
+                        name='Min Volatility'
+                    ))
 
-                fig.update_layout(
-                    title="Efficient Frontier",
-                    xaxis_title="Volatility (%)",
-                    yaxis_title="Expected Return (%)",
-                    height=600
-                )
+                    fig.update_layout(
+                        title="Efficient Frontier",
+                        xaxis_title="Volatility (%)",
+                        yaxis_title="Expected Return (%)",
+                        height=600
+                    )
 
-                st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, use_container_width=True)
 
             except Exception as e:
                 st.error(f"Error during optimization: {e}")
@@ -2048,76 +2095,81 @@ def display_sector_analysis(calculator):
     Analyze your portfolio's sector and geographic diversification.
     """)
 
-    analyzer = SectorAnalyzer()
     snapshot = calculator.get_snapshot()
 
-    symbols = [pos.symbol for pos in snapshot.positions]
-    weights = {pos.symbol: pos.current_value for pos in snapshot.positions}
-
-    if not symbols:
+    if not snapshot.positions:
         st.warning("No positions available for sector analysis")
         return
+
+    # Initialize SectorAnalyzer with positions
+    analyzer = SectorAnalyzer(snapshot.positions)
 
     with st.spinner("Fetching sector and geographic data..."):
         try:
             # Sector exposure
             st.subheader("🏢 Sector Exposure")
 
-            sector_exposure = analyzer.get_sector_exposure(symbols, weights)
+            sector_df = analyzer.get_sector_exposure()
 
-            if sector_exposure:
-                sector_df = pd.DataFrame([
-                    {'Sector': sector, 'Weight %': weight * 100}
-                    for sector, weight in sector_exposure.items()
-                ]).sort_values('Weight %', ascending=False)
+            if not sector_df.empty:
+                # Format for display
+                display_sector = sector_df.copy()
+                display_sector['weight'] = display_sector['weight'] * 100
+                display_sector['value'] = display_sector['value'].apply(format_currency)
 
                 fig = px.pie(
-                    sector_df,
-                    values='Weight %',
-                    names='Sector',
+                    display_sector,
+                    values='weight',
+                    names='sector',
                     title="Portfolio Sector Allocation"
                 )
                 st.plotly_chart(fig, use_container_width=True)
 
-                st.dataframe(sector_df, use_container_width=True)
+                st.dataframe(display_sector[['sector', 'value', 'num_positions', 'weight']],
+                            use_container_width=True)
             else:
                 st.info("Sector data not available for your holdings")
 
             # Geographic exposure
             st.subheader("🗺️ Geographic Exposure")
 
-            geo_exposure = analyzer.get_geographic_exposure(symbols, weights)
+            geo_df = analyzer.get_geographic_exposure()
 
-            if geo_exposure:
-                geo_df = pd.DataFrame([
-                    {'Country': country, 'Weight %': weight * 100}
-                    for country, weight in geo_exposure.items()
-                ]).sort_values('Weight %', ascending=False)
+            if not geo_df.empty:
+                # Format for display
+                display_geo = geo_df.copy()
+                display_geo['weight'] = display_geo['weight'] * 100
+                display_geo['value'] = display_geo['value'].apply(format_currency)
 
                 fig = px.bar(
-                    geo_df,
-                    x='Country',
-                    y='Weight %',
+                    display_geo,
+                    x='country',
+                    y='weight',
                     title="Portfolio Geographic Allocation"
                 )
                 st.plotly_chart(fig, use_container_width=True)
 
-                st.dataframe(geo_df, use_container_width=True)
+                st.dataframe(display_geo[['country', 'value', 'num_positions', 'weight']],
+                            use_container_width=True)
             else:
                 st.info("Geographic data not available for your holdings")
 
             # Concentration risk
             st.subheader("⚠️ Concentration Risk")
 
-            concentration = analyzer.check_concentration_risk(weights)
+            threshold = st.slider(
+                "Concentration Threshold (%)",
+                5.0, 30.0, 15.0, 1.0,
+                help="Alert if any sector exceeds this percentage"
+            ) / 100.0
 
-            col1, col2, col3 = st.columns(3)
+            concentration = analyzer.check_concentration_risk(threshold=threshold)
+
+            col1, col2 = st.columns(2)
 
             with col1:
-                st.metric("Largest Position", f"{concentration['largest_position_pct']*100:.1f}%")
+                st.metric("Max Sector Weight", f"{concentration['max_sector_weight']*100:.1f}%")
             with col2:
-                st.metric("Top 5 Concentration", f"{concentration['top_5_concentration']*100:.1f}%")
-            with col3:
                 hhi = concentration['herfindahl_index']
                 st.metric("Herfindahl Index", f"{hhi:.3f}")
 
@@ -2127,6 +2179,11 @@ def display_sector_analysis(calculator):
                     st.warning("Moderate concentration")
                 else:
                     st.error("High concentration risk")
+
+            if concentration['has_risk']:
+                st.warning("⚠️ Concentrated sectors detected:")
+                for sector_info in concentration['concentrated_sectors']:
+                    st.write(f"- {sector_info['sector']}: {sector_info['weight']*100:.1f}%")
 
         except Exception as e:
             st.error(f"Error analyzing sectors: {e}")
@@ -2140,7 +2197,6 @@ def display_goal_planning(calculator):
     Set financial goals and track your progress toward achieving them.
     """)
 
-    planner = GoalPlanner()
     snapshot = calculator.get_snapshot()
     current_value = snapshot.total_value
 
@@ -2158,20 +2214,20 @@ def display_goal_planning(calculator):
         with col1:
             goal_name = st.text_input("Goal Name")
             target_amount = st.number_input("Target Amount ($)", min_value=0.0, step=1000.0)
-            years = st.number_input("Years to Goal", min_value=1, max_value=50, value=10)
+            years_until = st.number_input("Years to Goal", min_value=1, max_value=50, value=10)
 
         with col2:
             priority = st.selectbox("Priority", [1, 2, 3, 4, 5])
-            current_savings = st.number_input("Current Savings ($)", min_value=0.0, step=1000.0)
+            current_saved = st.number_input("Current Savings ($)", min_value=0.0, step=1000.0)
 
         if st.button("Add Goal"):
             if goal_name and target_amount > 0:
                 goal = Goal(
                     name=goal_name,
                     target_amount=target_amount,
-                    target_date=datetime.now().date() + timedelta(days=365*years),
+                    years_until=years_until,
                     priority=priority,
-                    current_amount=current_savings
+                    current_saved=current_saved
                 )
                 st.session_state.financial_goals.append(goal)
                 st.success(f"Added goal: {goal_name}")
@@ -2189,7 +2245,7 @@ def display_goal_planning(calculator):
                 with col2:
                     st.write(f"Target: {format_currency(goal.target_amount)}")
                 with col3:
-                    progress = (goal.current_amount / goal.target_amount * 100) if goal.target_amount > 0 else 0
+                    progress = (goal.current_saved / goal.target_amount * 100) if goal.target_amount > 0 else 0
                     st.progress(min(progress / 100, 1.0))
                     st.write(f"{progress:.1f}% complete")
                 with col4:
@@ -2198,22 +2254,62 @@ def display_goal_planning(calculator):
                         st.rerun()
 
         # Calculate required savings
-        st.subheader("💰 Required Monthly Savings")
+        st.subheader("💰 Required Savings Analysis")
 
-        total_portfolio = current_value
-        expected_return = st.slider(
-            "Expected Annual Return (%)",
-            0.0, 15.0, 7.0, 0.5
-        ) / 100
+        col1, col2 = st.columns(2)
+        with col1:
+            annual_savings_available = st.number_input(
+                "Annual Savings Available ($)",
+                min_value=0.0,
+                value=12000.0,
+                step=1000.0,
+                help="Total amount you can save per year"
+            )
+        with col2:
+            expected_return = st.slider(
+                "Expected Annual Return (%)",
+                0.0, 15.0, 7.0, 0.5
+            ) / 100
 
-        savings_plan = planner.calculate_required_savings_per_goal(
-            st.session_state.financial_goals,
-            total_portfolio,
-            expected_return
+        # Initialize GoalPlanner with goals and total savings rate
+        planner = GoalPlanner(
+            goals=st.session_state.financial_goals,
+            total_savings_rate=annual_savings_available
         )
 
-        for goal_name, required in savings_plan.items():
-            st.metric(goal_name, format_currency(required) + "/month")
+        try:
+            savings_df = planner.calculate_required_savings_per_goal(expected_return=expected_return)
+
+            if not savings_df.empty:
+                # Format for display
+                display_savings = savings_df.copy()
+                display_savings['target_amount'] = display_savings['target_amount'].apply(format_currency)
+                display_savings['current_saved'] = display_savings['current_saved'].apply(format_currency)
+                display_savings['amount_needed'] = display_savings['amount_needed'].apply(format_currency)
+                display_savings['monthly_savings_required'] = display_savings['monthly_savings_required'].apply(format_currency)
+                display_savings['annual_savings_required'] = display_savings['annual_savings_required'].apply(format_currency)
+
+                st.dataframe(display_savings[['goal', 'target_amount', 'current_saved', 'years_until',
+                                              'monthly_savings_required', 'annual_savings_required', 'on_track']],
+                            use_container_width=True)
+
+                # Summary metrics
+                total_annual_needed = savings_df['annual_savings_required'].sum()
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total Annual Savings Needed", format_currency(total_annual_needed))
+                with col2:
+                    st.metric("Annual Savings Available", format_currency(annual_savings_available))
+                with col3:
+                    shortfall = max(0, total_annual_needed - annual_savings_available)
+                    if shortfall > 0:
+                        st.metric("Shortfall", format_currency(shortfall), delta=f"-{format_currency(shortfall)}")
+                    else:
+                        surplus = annual_savings_available - total_annual_needed
+                        st.metric("Surplus", format_currency(surplus), delta=f"+{format_currency(surplus)}")
+
+        except Exception as e:
+            st.error(f"Error calculating savings requirements: {e}")
     else:
         st.info("No goals added yet. Add your first financial goal above!")
 
@@ -2226,73 +2322,77 @@ def display_ai_insights(calculator):
     Get intelligent insights about your portfolio's performance, risks, and opportunities.
     """)
 
-    ai = AIInsights()
     snapshot = calculator.get_snapshot()
 
     if not snapshot.positions:
         st.warning("No positions available for AI analysis")
         return
 
-    # Portfolio Health Score
-    st.subheader("❤️ Portfolio Health Score")
-
-    with st.spinner("Calculating health score..."):
+    # Get historical data
+    with st.spinner("Fetching historical data..."):
         try:
-            # Get returns data
+            # Calculate portfolio returns
             start_date = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
-            returns = calculator.calculate_returns(start_date=start_date)
 
-            if returns.empty:
-                st.warning("Insufficient data for AI analysis")
+            # Get portfolio value history
+            import yfinance as yf
+
+            # Download benchmark data (S&P 500)
+            benchmark_data = yf.download('^GSPC', start=start_date, progress=False)
+
+            if benchmark_data.empty:
+                st.warning("Unable to fetch benchmark data")
                 return
 
-            health_score = ai.calculate_portfolio_health_score(
-                returns,
-                snapshot.total_value,
-                len(snapshot.positions)
-            )
+            benchmark_returns = benchmark_data['Adj Close'].pct_change().dropna()
 
-            # Display score with color coding
-            score = health_score['overall_score']
+            # Download portfolio stocks
+            symbols = [pos.symbol for pos in snapshot.positions]
+            weights = np.array([pos.current_value / snapshot.total_value for pos in snapshot.positions])
 
-            col1, col2, col3 = st.columns([2, 1, 1])
+            portfolio_data = yf.download(symbols, start=start_date, progress=False)
 
-            with col1:
-                st.metric("Overall Health Score", f"{score}/100")
+            if portfolio_data.empty:
+                st.warning("Unable to fetch portfolio historical data")
+                return
 
-                if score >= 80:
-                    st.success("Excellent portfolio health!")
-                elif score >= 60:
-                    st.info("Good portfolio health")
-                elif score >= 40:
-                    st.warning("Fair portfolio health - consider improvements")
-                else:
-                    st.error("Poor portfolio health - action recommended")
+            # Calculate weighted portfolio returns
+            if len(symbols) == 1:
+                portfolio_prices = portfolio_data['Adj Close']
+            else:
+                portfolio_prices = portfolio_data['Adj Close']
 
-            with col2:
-                st.metric("Return Score", f"{health_score['return_score']:.1f}")
-            with col3:
-                st.metric("Risk Score", f"{health_score['risk_score']:.1f}")
+            # Calculate returns for each stock
+            if len(symbols) == 1:
+                stock_returns = portfolio_prices.pct_change().dropna()
+                portfolio_returns = stock_returns
+            else:
+                stock_returns = portfolio_prices.pct_change().dropna()
+                # Weight returns by current portfolio weights
+                portfolio_returns = (stock_returns * weights).sum(axis=1)
 
-            # Component scores
-            st.markdown("**Component Scores:**")
-            components = {
-                'Diversification': health_score['diversification_score'],
-                'Volatility': health_score['volatility_score']
-            }
+            # Align dates
+            common_dates = portfolio_returns.index.intersection(benchmark_returns.index)
+            portfolio_returns = portfolio_returns.loc[common_dates]
+            benchmark_returns = benchmark_returns.loc[common_dates]
 
-            for component, value in components.items():
-                st.write(f"{component}: {value:.1f}/100")
+            if len(portfolio_returns) < 50:
+                st.warning("Insufficient historical data for AI analysis (need at least 50 days)")
+                return
 
         except Exception as e:
-            st.error(f"Error calculating health score: {e}")
+            st.error(f"Error fetching historical data: {e}")
+            return
+
+    # Initialize AIInsights with portfolio and benchmark returns
+    ai = AIInsights(portfolio_returns=portfolio_returns, benchmark_returns=benchmark_returns)
 
     # Performance Insights
     st.subheader("💡 Performance Insights")
 
     with st.spinner("Generating insights..."):
         try:
-            insights = ai.generate_performance_insights(returns, snapshot.total_value)
+            insights = ai.generate_performance_insights()
 
             for insight in insights:
                 st.info(insight)
@@ -2305,7 +2405,13 @@ def display_ai_insights(calculator):
 
     with st.spinner("Detecting anomalies..."):
         try:
-            anomalies = ai.detect_anomalies(returns)
+            threshold = st.slider(
+                "Anomaly Threshold (Standard Deviations)",
+                1.5, 4.0, 3.0, 0.1,
+                help="Number of standard deviations from mean to flag as anomaly"
+            )
+
+            anomalies = ai.detect_anomalies(threshold_std=threshold)
 
             if anomalies.empty:
                 st.success("✓ No unusual market movements detected")
@@ -2313,10 +2419,35 @@ def display_ai_insights(calculator):
                 st.warning(f"Detected {len(anomalies)} unusual market days:")
                 anomalies_display = anomalies.copy()
                 anomalies_display['return'] = anomalies_display['return'].apply(lambda x: f"{x*100:.2f}%")
+                anomalies_display['z_score'] = anomalies_display['z_score'].apply(lambda x: f"{x:.2f}")
                 st.dataframe(anomalies_display, use_container_width=True)
 
         except Exception as e:
             st.error(f"Error detecting anomalies: {e}")
+
+    # Actionable Suggestions
+    st.subheader("📋 Suggested Actions")
+
+    with st.spinner("Generating recommendations..."):
+        try:
+            suggestions = ai.suggest_actions()
+
+            if suggestions:
+                for suggestion in suggestions:
+                    priority = suggestion['priority']
+                    if priority == 'High':
+                        st.error(f"**{suggestion['action']}** - {suggestion['reason']}")
+                    elif priority == 'Medium':
+                        st.warning(f"**{suggestion['action']}** - {suggestion['reason']}")
+                    else:
+                        st.info(f"**{suggestion['action']}** - {suggestion['reason']}")
+                    st.write(f"💡 {suggestion['suggestion']}")
+                    st.write("---")
+            else:
+                st.success("✓ No immediate actions recommended. Portfolio is performing well!")
+
+        except Exception as e:
+            st.error(f"Error generating suggestions: {e}")
 
 
 def main():
