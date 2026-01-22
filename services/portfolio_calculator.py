@@ -93,39 +93,51 @@ class PortfolioCalculator:
 
         for position in self.positions:
             if position.symbol in prices_df.columns:
-                # Include prices after purchase date
+                # Only include data after purchase date
+                position_prices = prices_df[position.symbol].copy()
+
+                # Create mask for dates on or after purchase
                 mask = prices_df.index.date >= position.purchase_date
-                values = prices_df[position.symbol].copy()
-                values[~mask] = 0  # Use 0 instead of NaN before purchase
-                values_df[position.symbol] = values * position.shares
+
+                # Set values to NaN before purchase (will be dropped later)
+                position_prices[~mask] = np.nan
+
+                # Calculate position value
+                position_value = position_prices * position.shares
+                values_df[position.symbol] = position_value
 
                 # Track cost basis (only after purchase)
-                cost_basis = pd.Series(0, index=prices_df.index)
+                cost_basis = pd.Series(np.nan, index=prices_df.index)
                 cost_basis[mask] = position.cost_basis
                 cost_basis_df[position.symbol] = cost_basis
 
-        # Calculate total portfolio value and cost basis
-        portfolio_value = values_df.sum(axis=1)
-        total_cost_basis = cost_basis_df.sum(axis=1)
+        # Calculate total portfolio value and cost basis (sum across positions, ignoring NaN)
+        portfolio_value = values_df.sum(axis=1, min_count=1)  # min_count=1 means need at least 1 non-NaN
+        total_cost_basis = cost_basis_df.sum(axis=1, min_count=1)
 
-        # Calculate returns - handle cash flow adjustments
-        # Use simple returns for periods without cash flows
+        # Remove dates where we have no positions
+        valid_mask = ~portfolio_value.isna()
+        portfolio_value = portfolio_value[valid_mask]
+        total_cost_basis = total_cost_basis[valid_mask]
+
+        # Calculate returns with cash flow adjustments
         portfolio_returns = pd.Series(index=portfolio_value.index, dtype=float)
 
         for i in range(1, len(portfolio_value)):
             prev_value = portfolio_value.iloc[i-1]
             curr_value = portfolio_value.iloc[i]
 
-            # Check if there was a cash flow (new position added)
+            # Check for cash flows (new positions added)
             prev_cost = total_cost_basis.iloc[i-1]
             curr_cost = total_cost_basis.iloc[i]
             cash_flow = curr_cost - prev_cost
 
             if prev_value > 0:
-                # Adjust for cash flows: return = (curr_value - prev_value - cash_flow) / prev_value
+                # Cash-flow adjusted return
                 portfolio_returns.iloc[i] = (curr_value - prev_value - cash_flow) / prev_value
             else:
-                portfolio_returns.iloc[i] = 0
+                # First day of portfolio or prev_value is 0
+                portfolio_returns.iloc[i] = np.nan
 
         # Create result DataFrame
         result = pd.DataFrame({
@@ -134,7 +146,7 @@ class PortfolioCalculator:
             'returns': portfolio_returns
         })
 
-        return result[result['value'] > 0]  # Only include periods with holdings
+        return result.dropna(subset=['value'])
 
     def calculate_returns(self, start_date: str,
                          end_date: Optional[str] = None) -> pd.Series:
