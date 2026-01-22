@@ -15,18 +15,22 @@ import leafmap.foliumap as leafmap
 import geopandas as gpd
 from PIL import Image
 
-# Add pothole module to path
-sys.path.insert(0, str(Path(__file__).parent))
-
-from pothole import PotholeDetector
-
-
-# Page config
+# Page config must be first Streamlit command
 st.set_page_config(
     page_title="LA Pothole Detection",
     page_icon="🛣️",
     layout="wide",
 )
+
+# Add pothole module to path and import
+sys.path.insert(0, str(Path(__file__).parent))
+
+try:
+    from pothole import PotholeDetector
+except ImportError as e:
+    st.error(f"❌ Error importing pothole module: {e}")
+    st.error("Please ensure all dependencies are installed from requirements.txt")
+    st.stop()
 
 # Initialize session state
 if "geojson" not in st.session_state:
@@ -163,8 +167,15 @@ def fetch_latest_planet_basemap():
     import subprocess
 
     # Try to get credentials from Streamlit secrets first, then environment variables
-    api_key = st.secrets.get("PL_API_KEY", os.getenv("PL_API_KEY"))
-    series_name = st.secrets.get("PL_SERIES_NAME", os.getenv("PL_SERIES_NAME"))
+    try:
+        api_key = st.secrets["PL_API_KEY"]
+    except (KeyError, FileNotFoundError):
+        api_key = os.getenv("PL_API_KEY")
+
+    try:
+        series_name = st.secrets["PL_SERIES_NAME"]
+    except (KeyError, FileNotFoundError):
+        series_name = os.getenv("PL_SERIES_NAME")
 
     if not api_key:
         st.error("PL_API_KEY not set. Configure in Streamlit Cloud secrets or set as environment variable")
