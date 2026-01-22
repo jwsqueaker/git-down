@@ -162,15 +162,16 @@ def fetch_latest_planet_basemap():
     """Run the Planet basemap fetcher script."""
     import subprocess
 
-    api_key = os.getenv("PL_API_KEY")
-    series_name = os.getenv("PL_SERIES_NAME")
+    # Try to get credentials from Streamlit secrets first, then environment variables
+    api_key = st.secrets.get("PL_API_KEY", os.getenv("PL_API_KEY"))
+    series_name = st.secrets.get("PL_SERIES_NAME", os.getenv("PL_SERIES_NAME"))
 
     if not api_key:
-        st.error("PL_API_KEY environment variable not set")
+        st.error("PL_API_KEY not set. Configure in Streamlit Cloud secrets or set as environment variable")
         return False
 
     if not series_name:
-        st.error("PL_SERIES_NAME environment variable not set")
+        st.error("PL_SERIES_NAME not set. Configure in Streamlit Cloud secrets or set as environment variable")
         return False
 
     script_path = Path(__file__).parent / "scripts" / "planet_weekly_basemap_la.py"

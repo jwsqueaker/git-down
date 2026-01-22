@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+venv/
+env/
+ENV/
+
+# Streamlit secrets
+.streamlit/secrets.toml
+
+# Data files
+data/la_city_boundary.geojson
+data/weekly_la_basemap/
+*.tif
+*.tiff
+*.vrt
+
+# Model weights (large files)
+models/*.pth
+models/*.pt
+!models/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.log

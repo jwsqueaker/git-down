@@ -10,6 +10,21 @@ End-to-end pipeline for detecting potholes from satellite imagery using deep lea
 - **Geospatial Processing**: Full georeferencing, vectorization, and area calculations
 - **Interactive Visualization**: Streamlit app with map-based results display
 - **Export Capabilities**: GeoJSON output compatible with GIS tools
+- **Cloud Deployment**: Ready for Streamlit Cloud deployment
+
+## 🚀 Quick Deploy
+
+**Deploy to Streamlit Cloud:**
+
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/)
+
+1. Fork this repository
+2. Go to [share.streamlit.io](https://share.streamlit.io/)
+3. Deploy from your fork (`streamlit_app.py`)
+4. Add secrets (PL_API_KEY, PL_SERIES_NAME) in Settings
+5. Done! Start uploading GeoTIFFs to detect potholes
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed instructions.
 
 ## Architecture
 
