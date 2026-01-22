@@ -1,60 +1,60 @@
-asset_class,compound_return,volatility,arithmetic_return
-U.S. Inflation,2.50,2.52,2.50
-U.S. Cash,3.30,3.10,3.30
-U.S. Intermediate Treasuries,4.00,4.06,4.00
-U.S. Long Treasuries,4.20,5.69,4.30
-TIPS,4.30,4.47,4.30
-U.S. Aggregate Bonds,4.30,4.91,4.30
-U.S. Securitized,5.20,5.28,5.20
-U.S. Short Duration Government/Credit,4.00,4.01,4.00
-U.S. Long Duration Government/Credit,5.20,5.81,5.30
-U.S. Inv Grade Corporate Bonds,5.20,5.46,5.20
-U.S. Long Corporate Bonds,5.40,6.10,5.40
-U.S. High Yield Bonds,6.10,6.45,6.10
-U.S. Leveraged Loans,6.20,6.88,6.30
-World Government Bonds hedged,4.30,4.38,4.30
-World Government Bonds,4.30,4.55,4.30
-World ex-U.S. Government Bonds hedged,4.20,4.27,4.20
-World ex-U.S. Government Bonds,4.30,4.69,4.30
-Emerging Markets Sovereign Debt,6.30,6.96,6.40
-Emerging Markets Local Currency Debt,6.70,7.38,6.80
-Emerging Markets Corporate Bonds,6.10,6.37,6.20
-U.S. Muni 1-15 Yr Blend,3.80,3.88,3.80
-U.S. Muni High Yield,5.30,8.46,5.40
-U.S. Large Cap,6.70,7.64,6.80
-U.S. Mid Cap,7.00,8.55,7.10
-U.S. Small Cap,6.90,8.89,7.00
-Euro Area Large Cap,7.80,9.94,7.90
-Japanese Equity,8.80,9.91,8.90
-Hong Kong Equity,7.40,9.43,7.50
-UK Large Cap,6.40,7.99,6.50
-EAFE Equity,7.50,8.90,7.60
-Chinese Domestic Equity,7.10,11.25,7.20
-Emerging Markets Equity,7.80,9.24,7.90
-AC Asia ex-Japan Equity,7.90,9.83,8.00
-AC World Equity,7.00,8.28,7.10
-U.S. Equity Value Factor,7.70,9.11,7.80
-U.S. Equity Momentum Factor,7.60,8.91,7.70
-U.S. Equity Quality Factor,6.60,7.64,6.70
-U.S. Equity Minimum Volatility Factor,7.00,7.79,7.10
-U.S. Equity Dividend Yield Factor,7.50,8.71,7.60
-Global Convertible Bonds hedged,6.70,7.28,6.80
-U.S. Core Real Estate,8.20,8.79,8.30
-U.S. Value-Added Real Estate,10.10,11.72,10.30
-European Core Real Estate,6.90,7.77,7.00
-Asia Pacific Core Real Estate,8.40,9.65,8.50
-U.S. REITs,8.80,10.15,8.90
-Commercial Mortgage Loans,6.20,6.50,6.30
-Global Core Infrastructure,6.50,6.99,6.60
-Global Core Transport,7.90,8.64,8.00
-Global Timberland,6.30,6.71,6.40
-Commodities,4.60,6.15,4.70
-Gold,5.50,6.78,5.60
-Private Equity,10.20,11.91,10.40
-Venture Capital,8.50,10.96,8.70
-Diversified Hedge Funds,5.30,5.46,5.30
-Event Driven Hedge Funds,5.20,5.50,5.30
-Long Bias Hedge Funds,5.50,6.08,5.60
-Relative Value Hedge Funds,5.70,5.84,5.80
-Macro Hedge Funds,4.10,4.33,4.10
-Direct Lending,7.70,8.59,7.80
+asset_class,expected_return,volatility
+U.S. Inflation,2.50,2.52
+U.S. Cash,3.30,3.10
+U.S. Intermediate Treasuries,4.00,4.06
+U.S. Long Treasuries,4.20,5.69
+TIPS,4.30,4.47
+U.S. Aggregate Bonds,4.30,4.91
+U.S. Securitized,5.20,5.28
+U.S. Short Duration Government/Credit,4.00,4.01
+U.S. Long Duration Government/Credit,5.20,5.81
+U.S. Inv Grade Corporate Bonds,5.20,5.46
+U.S. Long Corporate Bonds,5.40,6.10
+U.S. High Yield Bonds,6.10,6.45
+U.S. Leveraged Loans,6.20,6.88
+World Government Bonds hedged,4.30,4.38
+World Government Bonds,4.30,4.55
+World ex-U.S. Government Bonds hedged,4.20,4.27
+World ex-U.S. Government Bonds,4.30,4.69
+Emerging Markets Sovereign Debt,6.30,6.96
+Emerging Markets Local Currency Debt,6.70,7.38
+Emerging Markets Corporate Bonds,6.10,6.37
+U.S. Muni 1-15 Yr Blend,3.80,3.88
+U.S. Muni High Yield,5.30,8.46
+U.S. Large Cap,6.70,7.64
+U.S. Mid Cap,7.00,8.55
+U.S. Small Cap,6.90,8.89
+Euro Area Large Cap,7.80,9.94
+Japanese Equity,8.80,9.91
+Hong Kong Equity,7.40,9.43
+UK Large Cap,6.40,7.99
+EAFE Equity,7.50,8.90
+Chinese Domestic Equity,7.10,11.25
+Emerging Markets Equity,7.80,9.24
+AC Asia ex-Japan Equity,7.90,9.83
+AC World Equity,7.00,8.28
+U.S. Equity Value Factor,7.70,9.11
+U.S. Equity Momentum Factor,7.60,8.91
+U.S. Equity Quality Factor,6.60,7.64
+U.S. Equity Minimum Volatility Factor,7.00,7.79
+U.S. Equity Dividend Yield Factor,7.50,8.71
+Global Convertible Bonds hedged,6.70,7.28
+U.S. Core Real Estate,8.20,8.79
+U.S. Value-Added Real Estate,10.10,11.72
+European Core Real Estate,6.90,7.77
+Asia Pacific Core Real Estate,8.40,9.65
+U.S. REITs,8.80,10.15
+Commercial Mortgage Loans,6.20,6.50
+Global Core Infrastructure,6.50,6.99
+Global Core Transport,7.90,8.64
+Global Timberland,6.30,6.71
+Commodities,4.60,6.15
+Gold,5.50,6.78
+Private Equity,10.20,11.91
+Venture Capital,8.50,10.96
+Diversified Hedge Funds,5.30,5.46
+Event Driven Hedge Funds,5.20,5.50
+Long Bias Hedge Funds,5.50,6.08
+Relative Value Hedge Funds,5.70,5.84
+Macro Hedge Funds,4.10,4.33
+Direct Lending,7.70,8.59

@@ -146,16 +146,16 @@ U.S. Government Bonds,iShares 20+ Year Treasury Bond ETF,TLT,50,2023-02-01,95.30
         Returns:
             CSV string template
         """
-        template = """asset_class,compound_return,volatility,arithmetic_return
-U.S. Large Cap,6.70,7.64,6.80
-U.S. Mid Cap,7.00,8.55,7.10
-U.S. Small Cap,6.90,8.89,7.00
-U.S. Aggregate Bonds,4.30,4.91,4.30
-U.S. High Yield Bonds,6.10,6.45,6.10
-International Developed (EAFE),7.50,8.90,7.60
-Emerging Markets,7.80,9.24,7.90
-U.S. REITs,8.80,10.15,8.90
-Cash,3.30,3.10,3.30
+        template = """asset_class,expected_return,volatility
+U.S. Large Cap,6.70,7.64
+U.S. Mid Cap,7.00,8.55
+U.S. Small Cap,6.90,8.89
+U.S. Aggregate Bonds,4.30,4.91
+U.S. High Yield Bonds,6.10,6.45
+International Developed (EAFE),7.50,8.90
+Emerging Markets,7.80,9.24
+U.S. REITs,8.80,10.15
+Cash,3.30,3.10
 """
         return template
 
