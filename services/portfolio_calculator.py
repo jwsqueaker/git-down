@@ -220,7 +220,8 @@ class PortfolioCalculator:
 
     def calculate_multi_period_returns(self) -> Dict[str, Dict]:
         """
-        Calculate returns for multiple standard periods.
+        Calculate returns for multiple standard periods using COST BASIS.
+        Return = (Current Value - Total Invested) / Total Invested
 
         Returns:
             Dictionary with period names as keys and metrics as values
@@ -255,25 +256,31 @@ class PortfolioCalculator:
                 hist_data = self.calculate_historical_values(start_date, end_date)
 
                 if not hist_data.empty and len(hist_data) > 1:
-                    start_value = hist_data['value'].iloc[0]
+                    end_cost_basis = hist_data['cost_basis'].iloc[-1]
                     end_value = hist_data['value'].iloc[-1]
 
-                    # Calculate total return
-                    total_return = (end_value / start_value - 1) * 100
+                    # Return = (Current Value - Total Invested) / Total Invested
+                    total_gain = end_value - end_cost_basis
+
+                    if end_cost_basis > 0:
+                        total_return = (total_gain / end_cost_basis) * 100
+                    else:
+                        total_return = 0
 
                     # Calculate annualized return
                     actual_days = (hist_data.index[-1] - hist_data.index[0]).days
                     years = actual_days / 365.25
-                    if years > 0:
-                        annualized_return = ((end_value / start_value) ** (1 / years) - 1) * 100
+                    if years > 0 and end_cost_basis > 0:
+                        annualized_return = ((end_value / end_cost_basis) ** (1 / years) - 1) * 100
                     else:
                         annualized_return = total_return
 
                     results[period_name] = {
                         'total_return': total_return,
                         'annualized_return': annualized_return,
-                        'start_value': start_value,
-                        'end_value': end_value,
+                        'total_invested': end_cost_basis,
+                        'current_value': end_value,
+                        'total_gain': total_gain,
                         'start_date': hist_data.index[0].strftime('%Y-%m-%d'),
                         'end_date': hist_data.index[-1].strftime('%Y-%m-%d'),
                         'days': actual_days
@@ -288,23 +295,29 @@ class PortfolioCalculator:
             hist_data = self.calculate_historical_values(start_date, end_date)
 
             if not hist_data.empty and len(hist_data) > 1:
-                start_value = hist_data['value'].iloc[0]
+                end_cost_basis = hist_data['cost_basis'].iloc[-1]
                 end_value = hist_data['value'].iloc[-1]
 
-                total_return = (end_value / start_value - 1) * 100
+                total_gain = end_value - end_cost_basis
+
+                if end_cost_basis > 0:
+                    total_return = (total_gain / end_cost_basis) * 100
+                else:
+                    total_return = 0
 
                 actual_days = (hist_data.index[-1] - hist_data.index[0]).days
                 years = actual_days / 365.25
-                if years > 0:
-                    annualized_return = ((end_value / start_value) ** (1 / years) - 1) * 100
+                if years > 0 and end_cost_basis > 0:
+                    annualized_return = ((end_value / end_cost_basis) ** (1 / years) - 1) * 100
                 else:
                     annualized_return = total_return
 
                 results['Since Inception'] = {
                     'total_return': total_return,
                     'annualized_return': annualized_return,
-                    'start_value': start_value,
-                    'end_value': end_value,
+                    'total_invested': end_cost_basis,
+                    'current_value': end_value,
+                    'total_gain': total_gain,
                     'start_date': hist_data.index[0].strftime('%Y-%m-%d'),
                     'end_date': hist_data.index[-1].strftime('%Y-%m-%d'),
                     'days': actual_days

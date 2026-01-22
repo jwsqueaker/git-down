@@ -202,17 +202,32 @@ def display_performance_metrics(calculator, period='1Y'):
             st.write(f"**Starting Cost Basis:** {format_currency(hist_data['cost_basis'].iloc[0])}")
             st.write(f"**Ending Cost Basis:** {format_currency(hist_data['cost_basis'].iloc[-1])}")
 
-            # Calculate simple total return
-            simple_return = (hist_data['value'].iloc[-1] / hist_data['value'].iloc[0] - 1) * 100
-            st.write(f"**Simple Total Return:** {simple_return:.2f}%")
+            # Calculate CORRECT return based on total invested
+            end_value = hist_data['value'].iloc[-1]
+            total_invested = hist_data['cost_basis'].iloc[-1]
+            total_gain = end_value - total_invested
+
+            if total_invested > 0:
+                correct_return = (total_gain / total_invested) * 100
+            else:
+                correct_return = 0
+
+            st.write("---")
+            st.write("**📊 CORRECT RETURN CALCULATION:**")
+            st.write(f"**Total Invested (Cost Basis):** {format_currency(total_invested)}")
+            st.write(f"**Current Value:** {format_currency(end_value)}")
+            st.write(f"**Total Gain/Loss:** {format_currency(total_gain)}")
+            st.write(f"**Return:** {correct_return:.2f}%")
+            st.write(f"*Formula: (Current Value - Total Invested) / Total Invested × 100*")
+            st.write("---")
 
             # Show if there were cash flows
             cost_change = hist_data['cost_basis'].iloc[-1] - hist_data['cost_basis'].iloc[0]
             if abs(cost_change) > 0.01:
-                st.warning(f"⚠️ Net cash flows detected: {format_currency(cost_change)}")
-                st.write("Returns are adjusted for cash flows (money added/removed)")
+                st.info(f"💰 Money added during period: {format_currency(cost_change)}")
+                st.write("This is normal if you added positions during the selected time period.")
             else:
-                st.success("✓ No cash flows - simple return calculation applies")
+                st.success("✓ No new money added during this period")
 
             # Show sample of data
             st.write("**Sample Data (first 5 rows):**")
@@ -280,15 +295,27 @@ def display_performance_metrics(calculator, period='1Y'):
                 'Period': period,
                 'Total Return': f"{data['total_return']:.2f}%",
                 'Annualized Return': f"{data['annualized_return']:.2f}%",
+                'Total Invested': format_currency(data['total_invested']),
+                'Current Value': format_currency(data['current_value']),
+                'Gain/Loss': format_currency(data['total_gain']),
                 'Start Date': data['start_date'],
-                'End Date': data['end_date'],
-                'Days': data['days']
+                'End Date': data['end_date']
             })
 
         returns_df = pd.DataFrame(returns_data)
 
         # Display the table
         st.dataframe(returns_df, use_container_width=True, hide_index=True)
+
+        # Show calculation explanation
+        st.info("""
+        **How Returns are Calculated:**
+        - **Total Invested** = Cost basis at end of period (all money you put in)
+        - **Current Value** = Market value at end of period
+        - **Gain/Loss** = Current Value - Total Invested
+        - **Return %** = (Gain/Loss / Total Invested) × 100
+        """)
+
 
         # Show a bar chart of returns
         fig_returns = go.Figure()
