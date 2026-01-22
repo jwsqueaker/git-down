@@ -12,19 +12,18 @@ End-to-end pipeline for detecting potholes from satellite imagery using deep lea
 - **Export Capabilities**: GeoJSON output compatible with GIS tools
 - **Cloud Deployment**: Ready for Streamlit Cloud deployment
 
-## 🚀 Quick Deploy
+## 🚀 Deployment
 
-**Deploy to Streamlit Cloud:**
+**Internal Deployment Only:**
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/)
+This is proprietary software. For authorized deployment:
 
-1. Fork this repository
-2. Go to [share.streamlit.io](https://share.streamlit.io/)
-3. Deploy from your fork (`streamlit_app.py`)
-4. Add secrets (PL_API_KEY, PL_SERIES_NAME) in Settings
-5. Done! Start uploading GeoTIFFs to detect potholes
+1. Ensure you have access to the private repository
+2. See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed instructions
+3. Configure secrets and credentials securely
+4. Deploy to private Streamlit workspace or internal infrastructure
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed instructions.
+**Access is restricted to authorized users only.**
 
 ## Architecture
 
@@ -444,16 +443,24 @@ For a typical LA citywide basemap (~50-100 quads):
 
 ## Contributing
 
-Contributions welcome! Please:
+This is proprietary software. Internal contributions only.
 
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Submit a pull request
+For authorized team members:
+1. Create a feature branch from the development branch
+2. Follow internal code review procedures
+3. Ensure all tests pass
+4. Submit for internal review
 
 ## License
 
-[Specify your license here]
+**PROPRIETARY AND CONFIDENTIAL**
+
+Copyright (c) 2024-2026. All Rights Reserved.
+
+This software is proprietary and confidential. Unauthorized copying, distribution,
+modification, or use is strictly prohibited. See LICENSE file for full terms.
+
+For licensing inquiries, contact the project owner.
 
 ## Acknowledgments
 
