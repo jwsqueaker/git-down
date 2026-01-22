@@ -58,7 +58,7 @@ class PortfolioCalculator:
     def calculate_historical_values(self, start_date: str,
                                     end_date: Optional[str] = None) -> pd.DataFrame:
         """
-        Calculate historical portfolio values.
+        Calculate historical portfolio values with proper handling of positions bought at different times.
 
         Args:
             start_date: Start date (YYYY-MM-DD)
@@ -87,29 +87,54 @@ class PortfolioCalculator:
         # Create DataFrame of prices
         prices_df = pd.DataFrame(all_prices)
 
-        # Calculate position values (shares * price)
+        # Calculate position values and track cost basis
         values_df = pd.DataFrame()
+        cost_basis_df = pd.DataFrame()
+
         for position in self.positions:
             if position.symbol in prices_df.columns:
-                # Only include prices after purchase date
+                # Include prices after purchase date
                 mask = prices_df.index.date >= position.purchase_date
                 values = prices_df[position.symbol].copy()
-                values[~mask] = np.nan
+                values[~mask] = 0  # Use 0 instead of NaN before purchase
                 values_df[position.symbol] = values * position.shares
 
-        # Calculate total portfolio value
-        portfolio_value = values_df.sum(axis=1)
+                # Track cost basis (only after purchase)
+                cost_basis = pd.Series(0, index=prices_df.index)
+                cost_basis[mask] = position.cost_basis
+                cost_basis_df[position.symbol] = cost_basis
 
-        # Calculate returns
-        portfolio_returns = portfolio_value.pct_change()
+        # Calculate total portfolio value and cost basis
+        portfolio_value = values_df.sum(axis=1)
+        total_cost_basis = cost_basis_df.sum(axis=1)
+
+        # Calculate returns - handle cash flow adjustments
+        # Use simple returns for periods without cash flows
+        portfolio_returns = pd.Series(index=portfolio_value.index, dtype=float)
+
+        for i in range(1, len(portfolio_value)):
+            prev_value = portfolio_value.iloc[i-1]
+            curr_value = portfolio_value.iloc[i]
+
+            # Check if there was a cash flow (new position added)
+            prev_cost = total_cost_basis.iloc[i-1]
+            curr_cost = total_cost_basis.iloc[i]
+            cash_flow = curr_cost - prev_cost
+
+            if prev_value > 0:
+                # Adjust for cash flows: return = (curr_value - prev_value - cash_flow) / prev_value
+                portfolio_returns.iloc[i] = (curr_value - prev_value - cash_flow) / prev_value
+            else:
+                portfolio_returns.iloc[i] = 0
 
         # Create result DataFrame
         result = pd.DataFrame({
             'value': portfolio_value,
+            'cost_basis': total_cost_basis,
             'returns': portfolio_returns
         })
 
-        return result.dropna()
+        return result[result['value'] > 0]  # Only include periods with holdings
 
     def calculate_returns(self, start_date: str,
                          end_date: Optional[str] = None) -> pd.Series:

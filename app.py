@@ -165,11 +165,28 @@ def display_performance_metrics(calculator, period='1Y'):
     with col1:
         period = st.selectbox(
             "Time Period",
-            options=['1M', '3M', '6M', '1Y', '3Y', '5Y', 'YTD', 'MAX'],
+            options=['1M', '3M', '6M', '1Y', '3Y', '5Y', '10Y', 'YTD', 'Inception', 'MAX'],
             index=3
         )
 
-    start_date, end_date = get_date_range(period)
+    # Calculate inception date (earliest purchase date)
+    snapshot = calculator.get_snapshot()
+    if snapshot.positions:
+        inception_date = min(p.purchase_date for p in snapshot.positions)
+        inception_str = inception_date.strftime('%Y-%m-%d')
+    else:
+        inception_str = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
+
+    # Get date range
+    if period == 'Inception':
+        start_date = inception_str
+        end_date = datetime.now().strftime('%Y-%m-%d')
+    else:
+        start_date, end_date = get_date_range(period)
+
+    # Display date range
+    with col2:
+        st.info(f"📅 Analysis Period: {start_date} to {end_date}")
 
     # Calculate metrics
     with st.spinner("Calculating performance metrics..."):
@@ -267,6 +284,74 @@ def display_performance_metrics(calculator, period='1Y'):
             ))
             fig.update_layout(title="Portfolio Performance", height=500)
             st.plotly_chart(fig, use_container_width=True)
+
+        # Portfolio Value vs Cost Basis
+        st.subheader("Portfolio Value vs Cost Basis")
+
+        fig2 = go.Figure()
+
+        fig2.add_trace(go.Scatter(
+            x=hist_data.index,
+            y=hist_data['value'],
+            mode='lines',
+            name='Market Value',
+            line=dict(color='#1f77b4', width=2),
+            fill='tonexty'
+        ))
+
+        fig2.add_trace(go.Scatter(
+            x=hist_data.index,
+            y=hist_data['cost_basis'],
+            mode='lines',
+            name='Cost Basis',
+            line=dict(color='#ff7f0e', width=2, dash='dash')
+        ))
+
+        # Add unrealized gains area
+        gains = hist_data['value'] - hist_data['cost_basis']
+        fig2.add_trace(go.Scatter(
+            x=hist_data.index,
+            y=gains,
+            mode='lines',
+            name='Unrealized Gain/Loss',
+            line=dict(color='green', width=1),
+            yaxis='y2'
+        ))
+
+        fig2.update_layout(
+            title="Portfolio Value vs Cost Basis Over Time",
+            xaxis_title="Date",
+            yaxis_title="Dollar Value ($)",
+            yaxis2=dict(
+                title="Gain/Loss ($)",
+                overlaying='y',
+                side='right'
+            ),
+            hovermode='x unified',
+            height=500
+        )
+
+        st.plotly_chart(fig2, use_container_width=True)
+
+        # Summary statistics
+        st.subheader("Period Summary")
+
+        current_value = hist_data['value'].iloc[-1]
+        current_cost = hist_data['cost_basis'].iloc[-1]
+        total_gain = current_value - current_cost
+        total_return_pct = (total_gain / current_cost * 100) if current_cost > 0 else 0
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.metric("Current Value", format_currency(current_value))
+        with col2:
+            st.metric("Total Cost Basis", format_currency(current_cost))
+        with col3:
+            st.metric("Total Gain/Loss", format_currency(total_gain),
+                     delta=f"{total_return_pct:.2f}%")
+        with col4:
+            st.metric("Return %", f"{total_return_pct:.2f}%")
 
 
 def display_benchmark_comparison(calculator):
