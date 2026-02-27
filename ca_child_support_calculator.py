@@ -1,6 +1,7 @@
 """
 California Child Support Calculator
 Based on California Family Code §§ 4050-4076
+Updated for SB 343 (operative September 1, 2024)
 
 Implements the statewide uniform guideline formula:
     CS = K[HN - (H%)(TN)]
@@ -20,6 +21,7 @@ References:
     - CA Family Code § 4060: Net disposable income computation
     - CA Family Code § 4062: Additional child support (add-ons)
     - CA Family Code § 4070-4073: Hardship deductions
+    - SB 343 (2024): Updated K-factor table, add-on proportional split
 """
 
 import math
@@ -28,7 +30,7 @@ import math
 # Tax Tables (2025 Tax Year)
 # ---------------------------------------------------------------------------
 
-# Federal income tax brackets - Single
+# Federal income tax brackets - Single (2025, per One Big Beautiful Bill Act)
 FEDERAL_BRACKETS_SINGLE = [
     (11_925, 0.10),
     (48_475, 0.12),
@@ -61,94 +63,143 @@ FEDERAL_BRACKETS_HOH = [
     (float("inf"), 0.37),
 ]
 
-# Federal standard deductions (2025)
+# Federal standard deductions (2025, updated by One Big Beautiful Bill Act)
 FEDERAL_STD_DEDUCTION = {
-    "Single": 15_000,
-    "Married Filing Jointly": 30_000,
-    "Head of Household": 22_500,
+    "Single": 15_750,
+    "Married Filing Jointly": 31_500,
+    "Head of Household": 23_625,
 }
 
-# California state income tax brackets - Single / Married Filing Separately
+# California state income tax brackets 2025 - Single (Schedule X)
 CA_BRACKETS_SINGLE = [
-    (10_756, 0.01),
-    (25_499, 0.02),
-    (40_245, 0.04),
-    (55_866, 0.06),
-    (70_606, 0.08),
-    (360_659, 0.093),
-    (432_787, 0.103),
-    (721_314, 0.113),
+    (11_079, 0.01),
+    (26_264, 0.02),
+    (41_452, 0.04),
+    (57_542, 0.06),
+    (72_724, 0.08),
+    (371_479, 0.093),
+    (445_771, 0.103),
+    (742_953, 0.113),
     (1_000_000, 0.123),
     (float("inf"), 0.133),  # includes 1% Mental Health Services Tax
 ]
 
-# California state income tax brackets - Married Filing Jointly
+# California state income tax brackets 2025 - Married Filing Jointly (Schedule Y)
 CA_BRACKETS_MFJ = [
     (21_512, 0.01),
     (50_998, 0.02),
     (80_490, 0.04),
     (111_732, 0.06),
     (141_212, 0.08),
-    (721_318, 0.093),
-    (865_574, 0.103),
-    (1_000_000, 0.113),
-    (1_442_628, 0.123),
-    (float("inf"), 0.133),
-]
-
-# California state income tax brackets - Head of Household
-CA_BRACKETS_HOH = [
-    (21_527, 0.01),
-    (51_000, 0.02),
-    (65_744, 0.04),
-    (81_364, 0.06),
-    (96_107, 0.08),
-    (490_493, 0.093),
-    (588_593, 0.103),
-    (980_987, 0.113),
+    (286_492, 0.093),
+    (343_788, 0.103),
+    (572_980, 0.113),
     (1_000_000, 0.123),
     (float("inf"), 0.133),
 ]
 
+# California state income tax brackets 2025 - Head of Household (Schedule Z)
+CA_BRACKETS_HOH = [
+    (22_158, 0.01),
+    (52_528, 0.02),
+    (82_904, 0.04),
+    (115_084, 0.06),
+    (145_448, 0.08),
+    (742_958, 0.093),
+    (891_542, 0.103),
+    (1_485_906, 0.113),
+    (float("inf"), 0.123),
+    # Mental Health Services Tax: +1% over $1,000,000 handled separately
+]
+
 # California standard deduction (2025)
 CA_STD_DEDUCTION = {
-    "Single": 5_540,
-    "Married Filing Jointly": 11_080,
-    "Head of Household": 11_080,
+    "Single": 5_706,
+    "Married Filing Jointly": 11_412,
+    "Head of Household": 11_412,
 }
 
-# California exemption credit (2025)
-CA_EXEMPTION_CREDIT = 144  # per exemption
+# California exemption credits (2025)
+CA_PERSONAL_EXEMPTION_CREDIT = {
+    "Single": 153,
+    "Head of Household": 153,
+    "Married Filing Jointly": 306,
+}
+CA_DEPENDENT_EXEMPTION_CREDIT = 475  # per dependent
 
 # FICA rates (2025)
 SS_RATE = 0.062
 SS_WAGE_BASE = 176_100
 MEDICARE_RATE = 0.0145
-MEDICARE_ADDITIONAL_RATE = 0.009  # on wages over $200k (single)
+MEDICARE_ADDITIONAL_RATE = 0.009  # on wages over threshold
 MEDICARE_ADDITIONAL_THRESHOLD_SINGLE = 200_000
 MEDICARE_ADDITIONAL_THRESHOLD_MFJ = 250_000
 
 # California State Disability Insurance (2025)
-CA_SDI_RATE = 0.012  # 1.2%, no wage cap since 2024
+CA_SDI_RATE = 0.012  # 1.2%, uncapped since 2024 (SB 951)
 
-# K-factor fractions by number of children (CA Family Code § 4055(b)(1))
-K_FRACTIONS = {
-    1: 0.20,
-    2: 0.275,
-    3: 0.34,
-    4: 0.355,
-    5: 0.37,
+# California minimum wage (2025) for low-income adjustment
+CA_MIN_WAGE_HOURLY = 16.50
+CA_MIN_WAGE_MONTHLY_GROSS = CA_MIN_WAGE_HOURLY * 40 * 52 / 12  # ~$2,860
+
+# ---------------------------------------------------------------------------
+# SB 343 K-Factor Income Fraction Table (operative Sept 1, 2024)
+# ---------------------------------------------------------------------------
+# This table provides the base income fraction for ONE child.
+# For multiple children, the fraction is scaled by child-count percentages.
+
+# Child-count percentages of combined net income (§ 4055)
+CHILD_SUPPORT_PERCENTAGES = {
+    1: 0.25,
+    2: 0.40,
+    3: 0.50,
+    4: 0.60,
 }
 
-# For 6+ children: add 0.005 per additional child (approximate)
-def get_k_fraction(num_children: int) -> float:
-    """Get the K-factor fraction based on number of children per § 4055(b)(1)."""
+
+def get_income_fraction(tn_monthly: float) -> float:
+    """
+    Get the base income fraction from the SB 343 K-factor table.
+
+    This fraction is for ONE child. It varies based on the combined
+    Total Net monthly disposable income (TN).
+
+    Table (CA Family Code § 4055(b)(1), as amended by SB 343):
+        $0 - $2,900:       0.165 + TN / 82,857
+        $2,901 - $5,000:   0.131 + TN / 42,149
+        $5,001 - $6,666:   0.25
+        $6,667 - $10,000:  0.10 + 1,499 / TN
+        Over $10,000:       0.12 + 1,200 / TN
+    """
+    if tn_monthly <= 0:
+        return 0.165
+    if tn_monthly <= 2_900:
+        return 0.165 + tn_monthly / 82_857
+    if tn_monthly <= 5_000:
+        return 0.131 + tn_monthly / 42_149
+    if tn_monthly <= 6_666:
+        return 0.25
+    if tn_monthly <= 10_000:
+        return 0.10 + 1_499 / tn_monthly
+    return 0.12 + 1_200 / tn_monthly
+
+
+def get_child_count_multiplier(num_children: int) -> float:
+    """
+    Get the multiplier to scale the base income fraction for multiple children.
+
+    The income fraction table is for 1 child (base 25%).
+    For N children, scale by: child_pct[N] / child_pct[1].
+    """
     if num_children <= 0:
         return 0.0
-    if num_children <= 5:
-        return K_FRACTIONS[num_children]
-    # 6+ children: court discretion, approximate continued increase
-    return 0.37 + (num_children - 5) * 0.005
+    if num_children == 1:
+        return 1.0
+    base_pct = CHILD_SUPPORT_PERCENTAGES[1]  # 0.25
+    if num_children <= 4:
+        return CHILD_SUPPORT_PERCENTAGES[num_children] / base_pct
+    # 5+ children: court discretion, estimate continued increase
+    return (0.60 + (num_children - 4) * 0.04) / base_pct
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +241,8 @@ def calc_federal_tax(annual_gross: float, filing_status: str,
 
 
 def calc_ca_state_tax(annual_gross: float, filing_status: str,
-                      num_exemptions: int = 1) -> float:
+                      num_exemptions: int = 1,
+                      num_dependents: int = 0) -> float:
     """Estimate annual California state income tax."""
     brackets_map = {
         "Single": CA_BRACKETS_SINGLE,
@@ -203,8 +255,16 @@ def calc_ca_state_tax(annual_gross: float, filing_status: str,
     taxable_income = max(0, annual_gross - std_deduction)
     tax = calc_progressive_tax(taxable_income, brackets)
 
-    # Apply exemption credits
-    tax -= num_exemptions * CA_EXEMPTION_CREDIT
+    # For HOH, add Mental Health Services Tax separately (1% over $1M)
+    if filing_status == "Head of Household" and taxable_income > 1_000_000:
+        tax += (taxable_income - 1_000_000) * 0.01
+
+    # Apply personal exemption credits
+    personal_credit = CA_PERSONAL_EXEMPTION_CREDIT.get(filing_status, 153)
+    tax -= personal_credit
+
+    # Apply dependent exemption credits
+    tax -= num_dependents * CA_DEPENDENT_EXEMPTION_CREDIT
 
     return max(0, tax)
 
@@ -225,7 +285,7 @@ def calc_fica(annual_gross: float, filing_status: str) -> float:
 
 
 def calc_ca_sdi(annual_gross: float) -> float:
-    """Calculate California State Disability Insurance."""
+    """Calculate California State Disability Insurance (uncapped since 2024)."""
     return annual_gross * CA_SDI_RATE
 
 
@@ -262,7 +322,8 @@ def calc_net_monthly_disposable_income(
             annual_gross, filing_status, num_dependents_for_credits
         ) / 12
         state_tax = calc_ca_state_tax(
-            annual_gross, filing_status, num_tax_exemptions
+            annual_gross, filing_status, num_tax_exemptions,
+            num_dependents_for_credits
         ) / 12
         fica = calc_fica(annual_gross, filing_status) / 12
         sdi = calc_ca_sdi(annual_gross) / 12
@@ -298,7 +359,7 @@ def calc_net_monthly_disposable_income(
 
 
 # ---------------------------------------------------------------------------
-# Child Support Formula (CA Family Code § 4055)
+# Child Support Formula (CA Family Code § 4055, as amended by SB 343)
 # ---------------------------------------------------------------------------
 
 def calc_child_support(
@@ -312,14 +373,11 @@ def calc_child_support(
 
     CS = K[HN - (H%)(TN)]
 
-    Parameters:
-        parent_a_nmdi: Parent A's net monthly disposable income
-        parent_b_nmdi: Parent B's net monthly disposable income
-        num_children: Number of children
-        parent_a_timeshare_pct: % of time Parent A has the children (0-100)
+    K = time-sharing multiplier x income fraction x child-count multiplier
 
-    Returns:
-        Dict with full calculation breakdown
+    Under SB 343 (operative Sept 1, 2024):
+    - Income fraction comes from the new income-based table
+    - Child-count scaling: 1 child=25%, 2=40%, 3=50%, 4=60%
     """
     tn = parent_a_nmdi + parent_b_nmdi  # Total Net
 
@@ -327,27 +385,33 @@ def calc_child_support(
     if parent_a_nmdi >= parent_b_nmdi:
         hn = parent_a_nmdi
         high_earner = "Parent A (higher earner)"
-        # H% = time the HIGH earner has the children
         h_pct = parent_a_timeshare_pct / 100.0
     else:
         hn = parent_b_nmdi
         high_earner = "Parent B (higher earner)"
         h_pct = (100 - parent_a_timeshare_pct) / 100.0
 
-    # Calculate K factor per § 4055(b)
-    fraction = get_k_fraction(num_children)
+    # Income fraction from SB 343 table (base for 1 child)
+    income_fraction = get_income_fraction(tn)
 
+    # Scale for number of children
+    child_multiplier = get_child_count_multiplier(num_children)
+    adjusted_fraction = income_fraction * child_multiplier
+
+    # Time-sharing multiplier per § 4055(b)
     if h_pct <= 0.50:
-        k = (1 + h_pct) * fraction
+        time_multiplier = 1 + h_pct
     else:
-        k = (2 - h_pct) * fraction
+        time_multiplier = 2 - h_pct
+
+    # K = time-sharing multiplier x adjusted income fraction
+    k = time_multiplier * adjusted_fraction
 
     # Guideline child support
     cs = k * (hn - (h_pct * tn))
 
     # Determine who pays whom
     if parent_a_nmdi >= parent_b_nmdi:
-        # Parent A is the high earner
         if cs >= 0:
             payer = "Parent A"
             payee = "Parent B"
@@ -356,7 +420,6 @@ def calc_child_support(
             payee = "Parent A"
             cs = abs(cs)
     else:
-        # Parent B is the high earner
         if cs >= 0:
             payer = "Parent B"
             payee = "Parent A"
@@ -373,9 +436,49 @@ def calc_child_support(
         "tn": tn,
         "hn": hn,
         "h_pct": h_pct,
+        "income_fraction": income_fraction,
+        "child_multiplier": child_multiplier,
+        "adjusted_fraction": adjusted_fraction,
+        "time_multiplier": time_multiplier,
         "k_factor": k,
-        "fraction": fraction,
         "num_children": num_children,
+    }
+
+
+def calc_low_income_adjustment(
+    cs_amount: float,
+    obligor_nmdi: float,
+    obligor_monthly_gross: float,
+) -> dict:
+    """
+    Calculate low-income adjustment per § 4055(b)(7).
+
+    If the obligor's net disposable income is below full-time minimum wage
+    gross income, the support may be reduced.
+
+    Reduction = CS x (MinWageGross - ObligorNDI) / MinWageGross
+    """
+    min_wage_gross = CA_MIN_WAGE_MONTHLY_GROSS  # ~$2,860
+
+    if obligor_nmdi >= min_wage_gross or obligor_nmdi <= 0:
+        return {
+            "applies": False,
+            "reduction_fraction": 0,
+            "max_reduction": 0,
+            "adjusted_cs": cs_amount,
+            "min_wage_gross": min_wage_gross,
+        }
+
+    reduction_fraction = (min_wage_gross - obligor_nmdi) / min_wage_gross
+    max_reduction = cs_amount * reduction_fraction
+    adjusted_cs = cs_amount - max_reduction
+
+    return {
+        "applies": True,
+        "reduction_fraction": reduction_fraction,
+        "max_reduction": max_reduction,
+        "adjusted_cs": max(0, adjusted_cs),
+        "min_wage_gross": min_wage_gross,
     }
 
 
@@ -390,7 +493,8 @@ def calc_addons(
     """
     Calculate add-on expenses per CA Family Code § 4062.
 
-    Add-ons are split in proportion to each parent's share of total net income.
+    Under SB 343, add-ons are split in proportion to each parent's share
+    of total net income (previously was 50/50 by default).
     """
     total_addons = (
         childcare_costs + uninsured_healthcare + education_costs + travel_costs
@@ -446,15 +550,16 @@ def render_income_section(parent_label: str, key_prefix: str) -> dict:
         step=100.0,
         key=f"{key_prefix}_gross",
         help="Total monthly income from all sources before taxes "
-             "(employment, self-employment, rental, investments, etc.) "
-             "per CA Family Code § 4058",
+             "(employment, self-employment, rental, investments, "
+             "capital gains, etc.) per CA Family Code § 4058",
     )
 
     filing_status = st.selectbox(
         "Tax Filing Status",
         ["Single", "Head of Household", "Married Filing Jointly"],
         key=f"{key_prefix}_filing",
-        help="Federal and state tax filing status",
+        help="Federal and state tax filing status. "
+             "Custodial parents typically file as Head of Household.",
     )
 
     col1, col2 = st.columns(2)
@@ -465,16 +570,17 @@ def render_income_section(parent_label: str, key_prefix: str) -> dict:
             max_value=20,
             value=1,
             key=f"{key_prefix}_exemptions",
-            help="Number of California tax exemptions claimed",
+            help="Number of California personal exemptions claimed",
         )
     with col2:
         num_dependents = st.number_input(
-            "Federal Dependent Credits",
+            "Dependents (for tax credits)",
             min_value=0,
             max_value=20,
             value=0,
             key=f"{key_prefix}_dependents",
-            help="Number of dependents for federal child tax credit",
+            help="Number of dependents for federal child tax credit "
+                 "and CA dependent exemption credit",
         )
 
     use_custom = st.checkbox(
@@ -516,22 +622,24 @@ def render_income_section(parent_label: str, key_prefix: str) -> dict:
 
     with st.expander("Additional Deductions (§ 4059)"):
         health_insurance = st.number_input(
-            "Monthly Health Insurance (parent only)",
+            "Monthly Health Insurance (parent & children)",
             min_value=0.0, value=0.0, step=25.0,
             key=f"{key_prefix}_health",
-            help="Health insurance premiums for the parent (not children)",
+            help="Health insurance premiums for the parent and any "
+                 "children the parent is obligated to support (§ 4059(d))",
         )
         mandatory_retirement = st.number_input(
             "Monthly Mandatory Retirement Contributions",
             min_value=0.0, value=0.0, step=25.0,
             key=f"{key_prefix}_retirement",
-            help="Required retirement contributions (not voluntary 401k)",
+            help="Required retirement contributions as a condition "
+                 "of employment (not voluntary 401k)",
         )
         union_dues = st.number_input(
             "Monthly Union Dues",
             min_value=0.0, value=0.0, step=10.0,
             key=f"{key_prefix}_union",
-            help="Mandatory union dues",
+            help="Mandatory union dues required as a condition of employment",
         )
         hardship = st.number_input(
             "Monthly Hardship Deduction (§ 4070-4073)",
@@ -542,18 +650,18 @@ def render_income_section(parent_label: str, key_prefix: str) -> dict:
                  "from other relationships",
         )
         other_cs = st.number_input(
-            "Monthly Child Support for Other Children",
+            "Monthly Child Support / Spousal Support Paid",
             min_value=0.0, value=0.0, step=25.0,
             key=f"{key_prefix}_other_cs",
-            help="Court-ordered child support paid for children from "
-                 "other relationships",
+            help="Court-ordered child support or spousal support paid "
+                 "for persons not subject to this order (§ 4059(e))",
         )
 
     return {
         "monthly_gross": monthly_gross,
         "filing_status": filing_status,
         "num_tax_exemptions": num_tax_exemptions,
-        "num_dependents": num_dependents,
+        "num_dependents_for_credits": num_dependents,
         "use_custom_taxes": use_custom,
         "custom_monthly_federal_tax": custom_federal,
         "custom_monthly_state_tax": custom_state,
@@ -582,7 +690,7 @@ def render_nmdi_breakdown(label: str, breakdown: dict):
         ("Mandatory Retirement", -breakdown["mandatory_retirement"]),
         ("Union Dues", -breakdown["union_dues"]),
         ("Hardship Deduction", -breakdown["hardship_deduction"]),
-        ("Other Child Support", -breakdown["other_child_support"]),
+        ("Other Support Paid", -breakdown["other_child_support"]),
     ]
 
     for label_text, amount in data:
@@ -598,7 +706,9 @@ def render_nmdi_breakdown(label: str, breakdown: dict):
     with col1:
         st.markdown("**Net Monthly Disposable Income**")
     with col2:
-        st.markdown(f"**{format_currency(breakdown['net_monthly_disposable_income'])}**")
+        st.markdown(
+            f"**{format_currency(breakdown['net_monthly_disposable_income'])}**"
+        )
 
 
 def main():
@@ -612,7 +722,7 @@ def main():
     st.title("⚖️ California Child Support Calculator")
     st.caption(
         "Based on California Family Code §§ 4050-4076 — "
-        "Statewide Uniform Guideline"
+        "Statewide Uniform Guideline — Updated for SB 343 (2024)"
     )
 
     st.warning(
@@ -621,7 +731,8 @@ def main():
         "purposes only and does not constitute legal advice. Actual court "
         "orders may differ based on judicial discretion, deviations under "
         "§ 4057, and other factors. Consult a family law attorney for "
-        "specific legal guidance."
+        "specific legal guidance. Courts use DissoMaster or similar "
+        "certified software for official calculations."
     )
 
     # ---- Sidebar: Key Parameters ----
@@ -660,23 +771,27 @@ def main():
 
         st.subheader("Add-On Expenses (§ 4062)")
         st.caption(
-            "Monthly expenses shared proportionally to income."
+            "Monthly expenses shared proportionally to income (SB 343)."
         )
 
         childcare = st.number_input(
-            "Childcare Costs",
+            "Childcare Costs (actually incurred)",
             min_value=0.0, value=0.0, step=50.0,
-            help="Monthly childcare costs related to employment or education",
+            help="Monthly childcare costs actually incurred and related "
+                 "to employment or education (SB 343 requires costs be "
+                 "actually incurred, not estimated)",
         )
         healthcare = st.number_input(
             "Uninsured Healthcare Costs",
             min_value=0.0, value=0.0, step=25.0,
-            help="Monthly uninsured health-care costs for the children",
+            help="Monthly reasonable uninsured health-care costs "
+                 "for the children",
         )
         education = st.number_input(
             "Educational Expenses",
             min_value=0.0, value=0.0, step=25.0,
-            help="Monthly costs for children's special educational needs",
+            help="Monthly costs for children's educational "
+                 "or special needs",
         )
         travel = st.number_input(
             "Travel for Visitation",
@@ -690,6 +805,7 @@ def main():
             "This calculator implements the **California guideline "
             "child support formula** from Family Code § 4055:\n\n"
             "```\nCS = K[HN − (H%)(TN)]\n```\n\n"
+            "Updated for **SB 343** (operative Sept 1, 2024).\n"
             "Tax estimates use **2025 tax year** brackets."
         )
 
@@ -723,6 +839,18 @@ def main():
         parent_a_timeshare_pct=parent_a_timeshare,
     )
 
+    # Low-income adjustment
+    if cs_result["payer"] == "Parent A":
+        obligor_nmdi = pa_nmdi
+        obligor_gross = parent_a_inputs["monthly_gross"]
+    else:
+        obligor_nmdi = pb_nmdi
+        obligor_gross = parent_b_inputs["monthly_gross"]
+
+    low_income = calc_low_income_adjustment(
+        cs_result["child_support"], obligor_nmdi, obligor_gross
+    )
+
     addon_result = calc_addons(
         parent_a_nmdi=pa_nmdi,
         parent_b_nmdi=pb_nmdi,
@@ -736,47 +864,62 @@ def main():
     with tab_results:
         st.header("Guideline Child Support Calculation")
 
-        # Key result
-        total_from_payer = cs_result["child_support"]
-        # Determine add-on adjustments
-        # The payer's share of add-ons increases their obligation;
-        # the payee's share reduces it (they pay directly).
+        base_cs = cs_result["child_support"]
+
+        # Apply low-income adjustment if applicable
+        if low_income["applies"]:
+            effective_cs = low_income["adjusted_cs"]
+        else:
+            effective_cs = base_cs
+
+        # Add-on: payer's proportional share
         if cs_result["payer"] == "Parent A":
             payer_addon = addon_result["parent_a_addon_amount"]
         else:
             payer_addon = addon_result["parent_b_addon_amount"]
 
-        total_support = total_from_payer + payer_addon
+        total_support = effective_cs + payer_addon
 
         # Display key metrics
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric(
-                "Base Child Support",
-                format_currency(cs_result["child_support"]),
-            )
+            st.metric("Base Child Support", format_currency(base_cs))
         with col2:
-            st.metric(
-                "Add-On (Payer's Share)",
-                format_currency(payer_addon),
-            )
+            if low_income["applies"]:
+                st.metric(
+                    "After Low-Income Adj.",
+                    format_currency(effective_cs),
+                )
+            else:
+                st.metric(
+                    "Add-On (Payer's Share)",
+                    format_currency(payer_addon),
+                )
         with col3:
             st.metric(
                 "Total Monthly Support",
                 format_currency(total_support),
             )
         with col4:
-            st.metric(
-                "Annual Support",
-                format_currency(total_support * 12),
-            )
+            st.metric("Annual Support", format_currency(total_support * 12))
 
         st.success(
             f"**{cs_result['payer']}** pays **{cs_result['payee']}** "
             f"a total of **{format_currency(total_support)}/month** "
-            f"in child support ({format_currency(cs_result['child_support'])} "
-            f"base + {format_currency(payer_addon)} add-ons)."
+            f"in child support."
         )
+
+        if low_income["applies"]:
+            st.info(
+                f"**Low-Income Adjustment Applied (§ 4055(b)(7)):** "
+                f"The obligor's net disposable income "
+                f"({format_currency(obligor_nmdi)}) is below the "
+                f"full-time minimum wage threshold "
+                f"({format_currency(low_income['min_wage_gross'])}). "
+                f"Base support reduced by up to "
+                f"{format_currency(low_income['max_reduction'])} "
+                f"(reduction factor: {format_pct(low_income['reduction_fraction'])})."
+            )
 
         st.divider()
 
@@ -800,28 +943,63 @@ def main():
                 f"{format_pct(cs_result['h_pct'])}"
             )
             st.markdown(
-                f"K Fraction ({cs_result['num_children']} "
-                f"{'child' if cs_result['num_children'] == 1 else 'children'}) | "
-                f"{cs_result['fraction']}"
+                f"Income Fraction (from table) | "
+                f"{cs_result['income_fraction']:.4f}"
             )
-            st.markdown(f"K Factor | {cs_result['k_factor']:.4f}")
+            if num_children > 1:
+                st.markdown(
+                    f"Child-Count Multiplier "
+                    f"({num_children} children) | "
+                    f"{cs_result['child_multiplier']:.2f}x"
+                )
+                st.markdown(
+                    f"Adjusted Fraction | "
+                    f"{cs_result['adjusted_fraction']:.4f}"
+                )
+            st.markdown(
+                f"Time-Sharing Multiplier | "
+                f"{cs_result['time_multiplier']:.2f}"
+            )
+            st.markdown(f"**K Factor** | **{cs_result['k_factor']:.4f}**")
 
         with col2:
             st.markdown("**Step-by-Step Calculation**")
             h_times_tn = cs_result["h_pct"] * cs_result["tn"]
             hn_minus = cs_result["hn"] - h_times_tn
             st.markdown(
-                f"1. H% × TN = {format_pct(cs_result['h_pct'])} × "
+                f"1. Income fraction (TN="
+                f"{format_currency(cs_result['tn'])}): "
+                f"**{cs_result['income_fraction']:.4f}**"
+            )
+            if num_children > 1:
+                st.markdown(
+                    f"2. Adjusted for {num_children} children: "
+                    f"{cs_result['income_fraction']:.4f} × "
+                    f"{cs_result['child_multiplier']:.2f} = "
+                    f"**{cs_result['adjusted_fraction']:.4f}**"
+                )
+            st.markdown(
+                f"{'3' if num_children > 1 else '2'}. "
+                f"K = {cs_result['time_multiplier']:.2f} × "
+                f"{cs_result['adjusted_fraction']:.4f} = "
+                f"**{cs_result['k_factor']:.4f}**"
+            )
+            st.markdown(
+                f"{'4' if num_children > 1 else '3'}. "
+                f"H% × TN = {format_pct(cs_result['h_pct'])} × "
                 f"{format_currency(cs_result['tn'])} = "
                 f"{format_currency(h_times_tn)}"
             )
             st.markdown(
-                f"2. HN − (H% × TN) = {format_currency(cs_result['hn'])} − "
+                f"{'5' if num_children > 1 else '4'}. "
+                f"HN − (H% × TN) = {format_currency(cs_result['hn'])} − "
                 f"{format_currency(h_times_tn)} = "
                 f"{format_currency(hn_minus)}"
             )
             st.markdown(
-                f"3. K × [HN − (H%)(TN)] = {cs_result['k_factor']:.4f} × "
+                f"{'6' if num_children > 1 else '5'}. "
+                f"CS = K × [HN − (H%)(TN)] = "
+                f"{cs_result['k_factor']:.4f} × "
                 f"{format_currency(hn_minus)} = "
                 f"**{format_currency(cs_result['child_support'])}**"
             )
@@ -845,14 +1023,29 @@ def main():
             with col1:
                 st.markdown("**Expense**")
                 if addon_result["childcare_costs"] > 0:
-                    st.text(f"Childcare: {format_currency(addon_result['childcare_costs'])}")
+                    st.text(
+                        f"Childcare: "
+                        f"{format_currency(addon_result['childcare_costs'])}"
+                    )
                 if addon_result["uninsured_healthcare"] > 0:
-                    st.text(f"Healthcare: {format_currency(addon_result['uninsured_healthcare'])}")
+                    st.text(
+                        f"Healthcare: "
+                        f"{format_currency(addon_result['uninsured_healthcare'])}"
+                    )
                 if addon_result["education_costs"] > 0:
-                    st.text(f"Education: {format_currency(addon_result['education_costs'])}")
+                    st.text(
+                        f"Education: "
+                        f"{format_currency(addon_result['education_costs'])}"
+                    )
                 if addon_result["travel_costs"] > 0:
-                    st.text(f"Travel: {format_currency(addon_result['travel_costs'])}")
-                st.markdown(f"**Total: {format_currency(addon_result['total_addons'])}**")
+                    st.text(
+                        f"Travel: "
+                        f"{format_currency(addon_result['travel_costs'])}"
+                    )
+                st.markdown(
+                    f"**Total: "
+                    f"{format_currency(addon_result['total_addons'])}**"
+                )
 
             with col2:
                 st.markdown(
@@ -883,44 +1076,60 @@ California Family Code § 4055 establishes the **statewide uniform guideline**
 for determining child support. The formula considers both parents' incomes and
 the amount of time each parent spends with the children.
 
+**Updated by SB 343** (operative September 1, 2024), which introduced a new
+income-based K-factor table and proportional add-on expense splitting.
+
 ---
 
 ### Variables
 
 | Variable | Definition |
 |----------|-----------|
-| **CS** | Child Support amount (monthly) |
-| **K** | Combined allocation factor — portion of both parents' combined income devoted to child support |
+| **CS** | Child Support amount (monthly). Positive = high earner pays low earner. Negative = low earner pays high earner. |
+| **K** | Combined allocation factor — portion of parents' combined income devoted to child support |
 | **HN** | High earner's Net monthly disposable income |
-| **H%** | Percentage of time the **high earner** has primary physical responsibility for the children |
+| **H%** | Percentage of time the **high earner** has primary physical responsibility for the children. For multiple children with different arrangements, H% = average. |
 | **TN** | Total Net monthly disposable income (both parents combined) |
 
 ---
 
-### How K Is Calculated (§ 4055(b))
+### How K Is Calculated (§ 4055(b), as amended by SB 343)
 
-K depends on:
-1. The **number of children**
-2. The **high earner's timeshare** (H%)
+K is the product of three components:
 
-**Fraction by number of children:**
+**K = Time-Sharing Multiplier × Income Fraction × Child-Count Multiplier**
 
-| Children | Fraction |
-|----------|----------|
-| 1 | 0.20 (20%) |
-| 2 | 0.275 (27.5%) |
-| 3 | 0.34 (34%) |
-| 4 | 0.355 (35.5%) |
-| 5 | 0.37 (37%) |
+#### 1. Time-Sharing Multiplier
 
-**K factor formula:**
-- If **H% ≤ 50%**: K = (1 + H%) × Fraction
-- If **H% > 50%**: K = (2 − H%) × Fraction
+| Condition | Multiplier |
+|-----------|------------|
+| H% ≤ 50% | 1 + H% |
+| H% > 50% | 2 − H% |
 
-When the high earner has **less** time with the children (H% low), K is higher
-because more support flows from the high earner to the other parent. When the
-high earner has **more** time (H% high), K decreases and the formula may even
-produce a **negative** result, meaning the lower earner pays the higher earner.
+#### 2. Income Fraction (SB 343 Table)
+
+The income fraction is based on **Total Net Disposable Income (TN)** and
+represents the base allocation for **one child**:
+
+| Total Net Income (TN)/Month | Income Fraction |
+|-----------------------------|-----------------|
+| $0 – $2,900 | 0.165 + TN / 82,857 |
+| $2,901 – $5,000 | 0.131 + TN / 42,149 |
+| $5,001 – $6,666 | 0.25 |
+| $6,667 – $10,000 | 0.10 + 1,499 / TN |
+| Over $10,000 | 0.12 + 1,200 / TN |
+
+#### 3. Child-Count Percentage
+
+The income fraction is scaled for the number of children:
+
+| Number of Children | % of Combined Net Income | Multiplier vs. 1 child |
+|--------------------|--------------------------|------------------------|
+| 1 | 25% | 1.0x |
+| 2 | 40% | 1.6x |
+| 3 | 50% | 2.0x |
+| 4 | 60% | 2.4x |
+| 5+ | Higher (court discretion) | — |
 
 ---
 
@@ -929,27 +1138,75 @@ produce a **negative** result, meaning the lower earner pays the higher earner.
 Net Monthly Disposable Income (NMDI) starts with **gross income from all
 sources** (§ 4058) and subtracts:
 
-1. **Federal income tax** (actual or estimated)
-2. **State income tax** (actual or estimated)
-3. **FICA** — Social Security (6.2%) and Medicare (1.45%)
-4. **State Disability Insurance** (SDI)
-5. **Mandatory retirement contributions** (not voluntary)
-6. **Mandatory union dues**
-7. **Health insurance premiums** (for the parent, not the children)
-8. **Hardship deductions** (§ 4070-4073)
-9. **Child support for other relationships**
+1. **Federal income tax** — actually payable, reflecting accurate filing status
+2. **State income tax** — actually payable
+3. **FICA** — Social Security (6.2% up to $176,100) and Medicare (1.45% + 0.9% above $200k)
+4. **State Disability Insurance** — 1.2% of all wages (uncapped since 2024)
+5. **Mandatory retirement contributions** — required as condition of employment
+6. **Mandatory union dues** — required as condition of employment
+7. **Health insurance premiums** — for parent and children (§ 4059(d))
+8. **Existing court-ordered support** — child/spousal support being paid (§ 4059(e))
+9. **Hardship deductions** — (§ 4070-4073) extraordinary health expenses,
+   uninsured catastrophic losses, or support of children from other
+   relationships
+
+Monthly NMDI = Annual Net Disposable Income / 12
 
 ---
 
-### Add-On Expenses (§ 4062)
+### Gross Income (§ 4058, as amended by SB 343)
 
-In addition to the base child support amount, the court may order parents to
-share these costs **in proportion to their respective net incomes**:
+Income from **whatever source derived**, including:
+- Wages, salaries, commissions, bonuses
+- Self-employment income (gross receipts minus operating expenses)
+- Rental income, royalties, dividends, interest, trust income
+- **Capital gains** (added by SB 343)
+- Workers' compensation, unemployment, disability benefits
+- Social Security benefits, pensions, annuities
+- Spousal support received from third parties
+- Military housing and food allowances
 
-- **Childcare** related to employment or education
-- **Uninsured healthcare** costs for the children
-- **Special educational needs** of the children
+**Excluded:** Child support received, needs-based public assistance
+(CalWORKs, SSI, Medi-Cal).
+
+---
+
+### Add-On Expenses (§ 4062, as amended by SB 343)
+
+In addition to base support, the court may order parents to share costs
+**in proportion to their respective net incomes** (changed from 50/50 default
+by SB 343):
+
+**Mandatory add-ons** (court SHALL order):
+- **Childcare** related to employment/education — must be **actually incurred**
+  (SB 343 change; 90-day reimbursement window, up from 30 days)
+- **Reasonable uninsured healthcare** costs for the children
+
+**Discretionary add-ons** (court MAY order):
+- **Educational or special needs** of the children
 - **Travel expenses** for visitation
+
+---
+
+### Low-Income Adjustment (§ 4055(b)(7))
+
+If the obligor's net disposable income is **below full-time minimum wage**
+gross income (~$2,860/month at $16.50/hr in 2025), the court may reduce
+support by:
+
+**Reduction = CS × (MinWageGross − ObligorNDI) / MinWageGross**
+
+The court has discretion within this range. Software must show the
+**range** of the permitted adjustment.
+
+---
+
+### Default Proceedings (§ 4055(b)(6))
+
+If the noncustodial parent fails to appear and there is no evidence of
+their custody percentage:
+- If noncustodial parent is higher earner: **H% = 0**
+- If custodial parent is higher earner: **H% = 100%**
 
 ---
 
@@ -957,12 +1214,11 @@ share these costs **in proportion to their respective net incomes**:
 
 - The guideline amount is **presumed correct** under § 4057, but a court may
   deviate if it would be unjust or inappropriate.
-- A **low-income adjustment** may apply when the obligor's net income is very
-  low (§ 4055(b)(7)).
-- This calculator uses **2025 tax year** brackets for estimating taxes. Actual
-  tax withholdings may differ.
+- SB 343 changes became **operative September 1, 2024**.
+- This calculator uses **2025 tax year** brackets (federal updated by the
+  One Big Beautiful Bill Act, July 2025).
 - Courts use **DissoMaster** or similar certified software for official
-  calculations. This tool is for educational and estimation purposes.
+  calculations. This tool is for **educational and estimation purposes**.
 
 ---
 
@@ -972,13 +1228,14 @@ share these costs **in proportion to their respective net incomes**:
 |---------|-------|
 | § 4050 | Legislative intent |
 | § 4053 | Mandatory adherence principles |
-| § 4055 | Guideline formula |
+| § 4055 | Guideline formula (amended by SB 343) |
 | § 4057 | Presumption of correctness; deviation |
-| § 4058 | Annual gross income |
+| § 4058 | Annual gross income (amended by SB 343) |
 | § 4059 | Deductions from gross income |
 | § 4060 | Net disposable income |
-| § 4062 | Additional child support (add-ons) |
+| § 4062 | Additional child support / add-ons (amended by SB 343) |
 | § 4070-4073 | Hardship deductions |
+| SB 343 | 2024 amendments to child support calculation |
         """)
 
 
