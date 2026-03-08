@@ -21,13 +21,21 @@ from services.portfolio_optimization import PortfolioOptimizer
 from services.sector_analysis import SectorAnalyzer
 from services.goal_planner import GoalPlanner, Goal
 from services.ai_insights import AIInsights
+from services.factor_analysis import FactorAnalysis
+from services.risk_management import RiskManager
+from services.performance_attribution import PerformanceAttribution
+from services.fixed_income import FixedIncomeAnalytics
+from services.esg_compliance import ESGAnalyzer
+from services.liquidity_analysis import LiquidityAnalyzer
+from services.multi_portfolio import MultiPortfolioManager, Fund
+from services.client_reporting import ClientReportGenerator
 from utils.csv_handler import CSVHandler
 from utils.helpers import format_percentage, format_currency, get_date_range
 from config.settings import BENCHMARKS, MACRO_INDICATORS
 
 # Page configuration
 st.set_page_config(
-    page_title="Portfolio Dashboard",
+    page_title="Institutional Portfolio Management Platform",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -41,6 +49,8 @@ if 'portfolio_positions' not in st.session_state:
     st.session_state.portfolio_positions = []
 if 'ltcma_data' not in st.session_state:
     st.session_state.ltcma_data = None
+if 'multi_portfolio_manager' not in st.session_state:
+    st.session_state.multi_portfolio_manager = MultiPortfolioManager()
 
 
 def load_portfolio_from_db():
@@ -2655,13 +2665,1091 @@ def display_ai_insights(calculator):
             st.error(f"Error generating suggestions: {e}")
 
 
+def display_performance_attribution(calculator):
+    """Display performance attribution analysis."""
+    st.header("Performance Attribution")
+
+    snapshot = calculator.get_snapshot()
+    if not snapshot.positions:
+        st.info("No positions to analyze.")
+        return
+
+    attribution_engine = PerformanceAttribution()
+
+    st.subheader("Return Contribution Analysis")
+
+    try:
+        inception_date = min(p.purchase_date for p in snapshot.positions)
+        start_date = inception_date.strftime('%Y-%m-%d')
+        end_date = datetime.now().strftime('%Y-%m-%d')
+
+        returns_data = calculator.calculate_returns(start_date, end_date)
+
+        if returns_data is not None and not returns_data.empty:
+            # Get individual position returns
+            symbols = list(set(p.symbol for p in snapshot.positions))
+            total_value = snapshot.total_value
+
+            weights = {}
+            for p in snapshot.positions:
+                weights[p.symbol] = weights.get(p.symbol, 0) + p.current_value / total_value
+
+            # Contribution analysis using position returns
+            fetcher = MarketDataFetcher()
+            position_returns = {}
+            for symbol in symbols:
+                try:
+                    ret = fetcher.get_returns(symbol, start_date, end_date)
+                    if ret is not None and not ret.empty:
+                        position_returns[symbol] = ret
+                except Exception:
+                    continue
+
+            if position_returns:
+                pos_returns_df = pd.DataFrame(position_returns).dropna()
+
+                if not pos_returns_df.empty:
+                    contrib = attribution_engine.calculate_contribution_analysis(
+                        pos_returns_df, weights
+                    )
+
+                    if 'error' not in contrib:
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Portfolio Return", f"{contrib['portfolio_return']*100:.2f}%")
+                        with col2:
+                            st.metric("Top Contributor",
+                                      f"{contrib['top_contributors'][0][0]}" if contrib['top_contributors'] else "N/A")
+                        with col3:
+                            st.metric("Bottom Contributor",
+                                      f"{contrib['bottom_contributors'][-1][0]}" if contrib['bottom_contributors'] else "N/A")
+
+                        # Contribution chart
+                        contrib_data = pd.DataFrame([
+                            {'Symbol': k, 'Contribution (%)': v * 100}
+                            for k, v in contrib['position_contributions'].items()
+                        ]).sort_values('Contribution (%)', ascending=True)
+
+                        fig = px.bar(
+                            contrib_data, x='Contribution (%)', y='Symbol',
+                            orientation='h', title='Return Contribution by Position',
+                            color='Contribution (%)',
+                            color_continuous_scale=['#e74c3c', '#f39c12', '#2ecc71']
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+
+                        # % of return contribution table
+                        pct_data = pd.DataFrame([
+                            {'Symbol': k, 'Weight (%)': f"{weights.get(k, 0)*100:.2f}",
+                             'Return (%)': f"{contrib['position_returns'].get(k, 0)*100:.2f}",
+                             'Contribution (%)': f"{v*100:.4f}",
+                             '% of Total': f"{contrib['pct_contributions'].get(k, 0):.1f}"}
+                            for k, v in contrib['position_contributions'].items()
+                        ])
+                        st.dataframe(pct_data, use_container_width=True)
+
+                    # Risk-adjusted attribution
+                    st.subheader("Risk-Adjusted Attribution")
+                    risk_adj = attribution_engine.calculate_risk_adjusted_attribution(
+                        pos_returns_df, weights
+                    )
+
+                    ra_data = pd.DataFrame([
+                        {
+                            'Symbol': symbol,
+                            'Weight (%)': f"{v['weight']*100:.2f}",
+                            'Ann. Return (%)': f"{v['annualized_return']*100:.2f}",
+                            'Ann. Vol (%)': f"{v['annualized_volatility']*100:.2f}",
+                            'Sharpe': f"{v['sharpe_ratio']:.2f}",
+                            'Sortino': f"{v['sortino_ratio']:.2f}",
+                            'Max DD (%)': f"{v['max_drawdown']*100:.2f}",
+                        }
+                        for symbol, v in risk_adj.items()
+                    ])
+                    st.dataframe(ra_data, use_container_width=True)
+
+            # Benchmark comparison batting average
+            st.subheader("Batting Average vs Benchmark")
+            try:
+                benchmark_data = fetcher.get_returns('^GSPC', start_date, end_date)
+                if benchmark_data is not None and not benchmark_data.empty:
+                    for freq, label in [('M', 'Monthly'), ('Q', 'Quarterly')]:
+                        ba = attribution_engine.calculate_batting_average(
+                            returns_data, benchmark_data, frequency=freq
+                        )
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            st.metric(f"{label} Batting Avg", f"{ba['batting_average']:.1f}%")
+                        with col2:
+                            st.metric(f"Up Capture", f"{ba['up_capture_ratio']:.1f}%")
+                        with col3:
+                            st.metric(f"Down Capture", f"{ba['down_capture_ratio']:.1f}%")
+                        with col4:
+                            st.metric(f"Capture Ratio", f"{ba['capture_ratio']:.2f}" if ba['capture_ratio'] != float('inf') else "N/A")
+            except Exception as e:
+                st.warning(f"Could not calculate batting average: {e}")
+
+    except Exception as e:
+        st.error(f"Error in attribution analysis: {e}")
+
+
+def display_factor_analysis(calculator):
+    """Display multi-factor risk model analysis."""
+    st.header("Factor Analysis")
+
+    snapshot = calculator.get_snapshot()
+    if not snapshot.positions:
+        st.info("No positions to analyze.")
+        return
+
+    inception_date = min(p.purchase_date for p in snapshot.positions)
+    start_date = inception_date.strftime('%Y-%m-%d')
+    end_date = datetime.now().strftime('%Y-%m-%d')
+
+    col1, col2 = st.columns(2)
+    with col1:
+        model = st.selectbox(
+            "Factor Model",
+            options=['capm', 'ff3', 'ff5', 'ff5_mom'],
+            format_func=lambda x: {
+                'capm': 'CAPM (Market Only)',
+                'ff3': 'Fama-French 3 Factor',
+                'ff5': 'Fama-French 5 Factor',
+                'ff5_mom': 'FF5 + Momentum',
+            }[x],
+            index=2
+        )
+    with col2:
+        rolling_window = st.slider("Rolling Window (days)", 30, 120, 60)
+
+    try:
+        returns_data = calculator.calculate_returns(start_date, end_date)
+
+        if returns_data is not None and not returns_data.empty:
+            factor_analyzer = FactorAnalysis()
+
+            with st.spinner("Running factor regression..."):
+                result = factor_analyzer.run_factor_regression(returns_data, model=model)
+
+            if 'error' in result:
+                st.warning(result['error'])
+                return
+
+            # Alpha display
+            st.subheader("Factor Regression Results")
+
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                alpha_color = "normal" if result['alpha_annualized'] >= 0 else "inverse"
+                st.metric("Annualized Alpha",
+                          f"{result['alpha_annualized']*100:.2f}%",
+                          delta=f"t-stat: {result['alpha_t_stat']:.2f}")
+            with col2:
+                st.metric("R-Squared", f"{result['r_squared']*100:.1f}%")
+            with col3:
+                st.metric("Adj. R-Squared", f"{result['adj_r_squared']*100:.1f}%")
+            with col4:
+                st.metric("Information Ratio", f"{result['information_ratio']:.2f}")
+
+            # Factor exposures (betas)
+            st.subheader("Factor Exposures (Betas)")
+            beta_data = []
+            for factor, beta in result['betas'].items():
+                t_stat = result['beta_t_stats'].get(factor, 0)
+                p_val = result['beta_p_values'].get(factor, 1)
+                sig = "***" if p_val < 0.01 else ("**" if p_val < 0.05 else ("*" if p_val < 0.10 else ""))
+                beta_data.append({
+                    'Factor': factor,
+                    'Description': FactorAnalysis.FACTOR_DESCRIPTIONS.get(factor, ''),
+                    'Beta': f"{beta:.3f}",
+                    't-stat': f"{t_stat:.2f}",
+                    'p-value': f"{p_val:.4f}",
+                    'Significance': sig,
+                })
+
+            st.dataframe(pd.DataFrame(beta_data), use_container_width=True)
+
+            # Factor exposure bar chart
+            fig = px.bar(
+                x=list(result['betas'].keys()),
+                y=list(result['betas'].values()),
+                labels={'x': 'Factor', 'y': 'Beta'},
+                title='Factor Exposures',
+                color=list(result['betas'].values()),
+                color_continuous_scale='RdYlGn'
+            )
+            fig.add_hline(y=0, line_dash="dash", line_color="gray")
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Factor contribution to returns
+            st.subheader("Factor Contribution to Returns")
+            contrib_data = result.get('factor_contributions', {})
+            if contrib_data:
+                fig = px.bar(
+                    x=list(contrib_data.keys()),
+                    y=[v * 100 for v in contrib_data.values()],
+                    labels={'x': 'Factor', 'y': 'Contribution (%)'},
+                    title='Annualized Factor Return Contributions',
+                    color=[v * 100 for v in contrib_data.values()],
+                    color_continuous_scale='RdYlGn'
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+            # Risk decomposition
+            st.subheader("Risk Decomposition")
+            with st.spinner("Decomposing risk..."):
+                risk_decomp = factor_analyzer.factor_risk_decomposition(returns_data)
+
+            if 'error' not in risk_decomp:
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total Risk", f"{risk_decomp['total_risk']*100:.2f}%")
+                with col2:
+                    st.metric("Systematic Risk",
+                              f"{risk_decomp['systematic_risk']*100:.2f}%",
+                              delta=f"{risk_decomp['systematic_pct']:.1f}% of total")
+                with col3:
+                    st.metric("Idiosyncratic Risk",
+                              f"{risk_decomp['idiosyncratic_risk']*100:.2f}%",
+                              delta=f"{risk_decomp['idiosyncratic_pct']:.1f}% of total")
+
+                # Pie chart of systematic vs idiosyncratic
+                fig = px.pie(
+                    values=[risk_decomp['systematic_pct'], risk_decomp['idiosyncratic_pct']],
+                    names=['Systematic (Factor)', 'Idiosyncratic (Stock-Specific)'],
+                    title='Risk Decomposition',
+                    color_discrete_sequence=['#3498db', '#e74c3c']
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+            # Rolling factor exposures
+            st.subheader("Rolling Factor Exposures")
+            with st.spinner("Calculating rolling exposures..."):
+                rolling = factor_analyzer.rolling_factor_exposure(
+                    returns_data, window=rolling_window
+                )
+
+            if not rolling.empty:
+                fig = go.Figure()
+                for col in rolling.columns:
+                    fig.add_trace(go.Scatter(
+                        x=rolling.index, y=rolling[col],
+                        mode='lines', name=col
+                    ))
+                fig.update_layout(
+                    title=f'Rolling {rolling_window}-Day Factor Exposures',
+                    yaxis_title='Beta / Alpha',
+                    xaxis_title='Date'
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+            # Style Analysis
+            st.subheader("Returns-Based Style Analysis")
+            with st.spinner("Running style analysis..."):
+                style = factor_analyzer.style_analysis(returns_data)
+
+            if 'error' not in style:
+                st.write(f"**R-Squared:** {style['r_squared']*100:.1f}%")
+                st.write(f"**Selection Return (Ann.):** {style['selection_return']*100:.2f}%")
+
+                weights_data = pd.DataFrame([
+                    {'Style': k, 'Weight (%)': v * 100}
+                    for k, v in style['style_weights'].items() if v > 0.01
+                ]).sort_values('Weight (%)', ascending=False)
+
+                fig = px.bar(
+                    weights_data, x='Style', y='Weight (%)',
+                    title='Style Decomposition',
+                    color='Weight (%)',
+                    color_continuous_scale='Viridis'
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+    except Exception as e:
+        st.error(f"Error in factor analysis: {e}")
+
+
+def display_risk_management(calculator):
+    """Display institutional risk management dashboard."""
+    st.header("Risk Management")
+
+    snapshot = calculator.get_snapshot()
+    if not snapshot.positions:
+        st.info("No positions to analyze.")
+        return
+
+    risk_mgr = RiskManager()
+    total_value = snapshot.total_value
+
+    inception_date = min(p.purchase_date for p in snapshot.positions)
+    start_date = inception_date.strftime('%Y-%m-%d')
+    end_date = datetime.now().strftime('%Y-%m-%d')
+
+    try:
+        returns_data = calculator.calculate_returns(start_date, end_date)
+
+        if returns_data is None or returns_data.empty:
+            st.warning("Insufficient return data for risk analysis.")
+            return
+
+        # VaR and CVaR
+        st.subheader("Value at Risk (VaR) & Expected Shortfall")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            confidence = st.selectbox("Confidence Level", [0.90, 0.95, 0.99], index=1)
+        with col2:
+            horizon = st.selectbox("Holding Period (days)", [1, 5, 10, 21], index=0)
+
+        var_results = risk_mgr.calculate_var(
+            returns_data, method='all', horizon=horizon,
+            portfolio_value=total_value, confidence=confidence
+        )
+        cvar_results = risk_mgr.calculate_cvar(
+            returns_data, method='all', horizon=horizon,
+            portfolio_value=total_value, confidence=confidence
+        )
+
+        col1, col2, col3 = st.columns(3)
+        for i, (method, label) in enumerate([
+            ('historical', 'Historical'), ('parametric', 'Parametric'), ('cornish_fisher', 'Cornish-Fisher')
+        ]):
+            with [col1, col2, col3][i]:
+                var = var_results.get(method, {})
+                cvar = cvar_results.get(method, {})
+                st.metric(
+                    f"VaR ({label})",
+                    format_currency(var.get('var_dollar', 0)),
+                    delta=f"{var.get('var_pct', 0)*100:.2f}%"
+                )
+                st.metric(
+                    f"CVaR ({label})",
+                    format_currency(cvar.get('cvar_dollar', 0)),
+                    delta=f"{cvar.get('cvar_pct', 0)*100:.2f}%"
+                )
+
+        # Tail Risk Metrics
+        st.subheader("Tail Risk Analysis")
+        tail = risk_mgr.calculate_tail_risk_metrics(returns_data)
+
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Skewness", f"{tail['skewness']:.3f}")
+            st.metric("Worst Day", f"{tail['worst_day']*100:.2f}%")
+        with col2:
+            st.metric("Excess Kurtosis", f"{tail['excess_kurtosis']:.3f}")
+            st.metric("Worst Week", f"{tail['worst_week']*100:.2f}%")
+        with col3:
+            st.metric("Gain/Loss Ratio", f"{tail['gain_loss_ratio']:.2f}")
+            st.metric("Worst Month", f"{tail['worst_month']*100:.2f}%")
+        with col4:
+            st.metric("Tail Ratio", f"{tail['tail_ratio']:.2f}")
+            normality = "Yes" if tail['is_normal'] else "No"
+            st.metric("Normal Distribution?", normality)
+
+        # Returns distribution
+        fig = go.Figure()
+        fig.add_trace(go.Histogram(
+            x=returns_data.values * 100,
+            nbinsx=50,
+            name='Actual Returns',
+            marker_color='#3498db',
+            opacity=0.7
+        ))
+        # Normal overlay
+        x_range = np.linspace(returns_data.min() * 100, returns_data.max() * 100, 100)
+        from scipy.stats import norm
+        normal_pdf = norm.pdf(x_range, returns_data.mean() * 100, returns_data.std() * 100)
+        fig.add_trace(go.Scatter(
+            x=x_range,
+            y=normal_pdf * len(returns_data) * (returns_data.max() - returns_data.min()) * 100 / 50,
+            mode='lines', name='Normal Distribution',
+            line=dict(color='red', dash='dash')
+        ))
+        fig.update_layout(title='Return Distribution vs Normal', xaxis_title='Return (%)', yaxis_title='Frequency')
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Drawdown Analysis
+        st.subheader("Drawdown Analysis")
+        dd = risk_mgr.calculate_drawdown_analysis(returns_data)
+
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Max Drawdown", f"{dd['max_drawdown']*100:.2f}%")
+        with col2:
+            st.metric("Current Drawdown", f"{dd['current_drawdown']*100:.2f}%")
+        with col3:
+            st.metric("Avg Drawdown", f"{dd['average_drawdown']*100:.2f}%")
+        with col4:
+            st.metric("% Time in DD", f"{dd['pct_time_in_drawdown']:.1f}%")
+
+        if dd.get('recovery_days') is not None:
+            st.info(f"Recovery from max drawdown took {dd['recovery_days']} days")
+
+        # Drawdown chart
+        dd_series = dd['drawdown_series']
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=dd_series.index, y=dd_series.values * 100,
+            fill='tozeroy', fillcolor='rgba(231,76,60,0.3)',
+            line=dict(color='#e74c3c'),
+            name='Drawdown'
+        ))
+        fig.update_layout(title='Drawdown Over Time', yaxis_title='Drawdown (%)', xaxis_title='Date')
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Top 5 drawdowns table
+        if dd.get('top_5_drawdowns'):
+            st.write("**Top 5 Drawdowns:**")
+            dd_table = pd.DataFrame([
+                {
+                    'Start': d['start'].strftime('%Y-%m-%d'),
+                    'Trough': d['trough'].strftime('%Y-%m-%d'),
+                    'End': d['end'].strftime('%Y-%m-%d'),
+                    'Depth (%)': f"{d['depth']*100:.2f}",
+                    'Duration (Days)': d['duration_days'],
+                }
+                for d in dd['top_5_drawdowns']
+            ])
+            st.dataframe(dd_table, use_container_width=True)
+
+        # Stress Testing
+        st.subheader("Stress Testing")
+        position_weights = {}
+        asset_classes = {}
+        for p in snapshot.positions:
+            w = p.current_value / total_value if total_value > 0 else 0
+            position_weights[p.symbol] = position_weights.get(p.symbol, 0) + w
+            asset_classes[p.symbol] = p.asset_class or 'equity'
+
+        stress_results = risk_mgr.run_stress_test(
+            total_value, position_weights, asset_classes
+        )
+
+        if not stress_results.empty:
+            stress_display = stress_results.copy()
+            stress_display['Portfolio Impact ($)'] = stress_display['Portfolio Impact ($)'].apply(lambda x: format_currency(x))
+            stress_display['Portfolio Impact (%)'] = stress_display['Portfolio Impact (%)'].apply(lambda x: f"{x:.2f}%")
+            st.dataframe(stress_display, use_container_width=True)
+
+            # Stress test bar chart
+            fig = px.bar(
+                stress_results, x='Scenario', y='Portfolio Impact (%)',
+                title='Stress Test Impact',
+                color='Portfolio Impact (%)',
+                color_continuous_scale='RdYlGn'
+            )
+            fig.update_layout(xaxis_tickangle=-45)
+            st.plotly_chart(fig, use_container_width=True)
+
+        # Custom stress test
+        st.subheader("Custom Stress Scenario")
+        col1, col2 = st.columns(2)
+        with col1:
+            custom_equity_shock = st.slider("Equity Shock (%)", -60, 0, -20) / 100
+        with col2:
+            custom_bond_shock = st.slider("Bond Shock (%)", -30, 30, 0) / 100
+
+        custom_stress = risk_mgr.run_custom_stress_test(
+            returns_data, custom_equity_shock, custom_bond_shock, total_value
+        )
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Estimated Impact", f"{custom_stress['estimated_impact_pct']:.2f}%")
+        with col2:
+            st.metric("Dollar Impact", format_currency(custom_stress['estimated_impact_dollar']))
+        with col3:
+            st.metric("Stressed Value", format_currency(custom_stress['stressed_portfolio_value']))
+
+    except Exception as e:
+        st.error(f"Error in risk management: {e}")
+
+
+def display_fixed_income():
+    """Display fixed income analytics."""
+    st.header("Fixed Income Analytics")
+
+    fi = FixedIncomeAnalytics()
+
+    st.subheader("Bond Calculator")
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        face_value = st.number_input("Face Value ($)", value=1000.0, step=100.0)
+        coupon_rate = st.number_input("Coupon Rate (%)", value=5.0, step=0.25) / 100
+    with col2:
+        ytm = st.number_input("Yield to Maturity (%)", value=4.5, step=0.25) / 100
+        years = st.number_input("Years to Maturity", value=10.0, step=0.5, min_value=0.5)
+    with col3:
+        frequency = st.selectbox("Coupon Frequency", [1, 2, 4],
+                                  format_func=lambda x: {1: 'Annual', 2: 'Semi-Annual', 4: 'Quarterly'}[x],
+                                  index=1)
+
+    # Bond pricing
+    pricing = fi.calculate_bond_price(face_value, coupon_rate, ytm, years, frequency)
+    duration = fi.calculate_duration(face_value, coupon_rate, ytm, years, frequency)
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Clean Price", format_currency(pricing['clean_price']))
+        st.metric("Premium/Discount", format_currency(pricing['premium_discount']))
+    with col2:
+        st.metric("Macaulay Duration", f"{duration['macaulay_duration']:.3f} yrs")
+        st.metric("Modified Duration", f"{duration['modified_duration']:.3f}")
+    with col3:
+        st.metric("DV01", format_currency(duration['dv01']))
+        st.metric("Convexity", f"{duration['convexity']:.2f}")
+    with col4:
+        st.metric("Total Coupons", format_currency(pricing['total_coupons']))
+        st.metric("Coupon Payment", format_currency(pricing['coupon_payment']))
+
+    # Price sensitivity analysis
+    st.subheader("Price Sensitivity Analysis")
+
+    sensitivities = []
+    for bps in [-200, -100, -50, -25, 25, 50, 100, 200]:
+        sens = fi.price_sensitivity(face_value, coupon_rate, ytm, years, bps, frequency)
+        sensitivities.append({
+            'Yield Change (bps)': bps,
+            'Duration Effect (%)': f"{sens['duration_effect_pct']:.3f}",
+            'Convexity Effect (%)': f"{sens['convexity_effect_pct']:.3f}",
+            'Total Change (%)': f"{sens['total_change_pct']:.3f}",
+            'New Price': format_currency(sens['exact_new_price']),
+            'Dollar Change': format_currency(sens['dollar_change']),
+        })
+
+    st.dataframe(pd.DataFrame(sensitivities), use_container_width=True)
+
+    # Price-yield curve
+    yield_range = np.arange(max(0.001, ytm - 0.04), ytm + 0.04, 0.002)
+    prices = [fi.calculate_bond_price(face_value, coupon_rate, y, years, frequency)['clean_price']
+              for y in yield_range]
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=yield_range * 100, y=prices,
+        mode='lines', name='Price-Yield Relationship',
+        line=dict(color='#3498db', width=2)
+    ))
+    fig.add_trace(go.Scatter(
+        x=[ytm * 100], y=[pricing['clean_price']],
+        mode='markers', name='Current',
+        marker=dict(color='red', size=12)
+    ))
+    fig.update_layout(
+        title='Price-Yield Relationship',
+        xaxis_title='Yield (%)',
+        yaxis_title='Price ($)'
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Yield Curve Builder
+    st.subheader("Yield Curve Analysis")
+
+    st.write("Enter Treasury yields (or use defaults):")
+    default_maturities = [0.25, 0.5, 1, 2, 3, 5, 7, 10, 20, 30]
+    default_yields = [4.8, 4.7, 4.5, 4.3, 4.2, 4.1, 4.15, 4.2, 4.4, 4.5]
+
+    cols = st.columns(5)
+    maturities = []
+    yields_input = []
+    for i, (mat, yld) in enumerate(zip(default_maturities, default_yields)):
+        with cols[i % 5]:
+            y = st.number_input(f"{mat}Y (%)", value=yld, step=0.05, key=f"yc_{mat}")
+            maturities.append(mat)
+            yields_input.append(y / 100)
+
+    curve = fi.build_yield_curve(maturities, yields_input)
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Curve Shape", curve['shape'])
+    with col2:
+        st.metric("Term Spread", f"{curve['term_spread_bps']:.0f} bps")
+    with col3:
+        st.metric("Short Rate", f"{curve['short_rate']*100:.2f}%")
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=curve['maturities'], y=[y * 100 for y in curve['yields']],
+        mode='lines+markers', name='Spot Curve',
+        line=dict(color='#3498db', width=2)
+    ))
+    if curve['forward_rates']:
+        fwd_x = [(f['from'] + f['to']) / 2 for f in curve['forward_rates']]
+        fwd_y = [f['forward_rate'] * 100 for f in curve['forward_rates']]
+        fig.add_trace(go.Scatter(
+            x=fwd_x, y=fwd_y,
+            mode='lines+markers', name='Forward Rates',
+            line=dict(color='#e74c3c', dash='dash')
+        ))
+    fig.update_layout(
+        title='Treasury Yield Curve',
+        xaxis_title='Maturity (Years)',
+        yaxis_title='Yield (%)'
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def display_esg_compliance(calculator):
+    """Display ESG scoring and compliance monitoring."""
+    st.header("ESG & Compliance")
+
+    snapshot = calculator.get_snapshot()
+    if not snapshot.positions:
+        st.info("No positions to analyze.")
+        return
+
+    esg = ESGAnalyzer()
+    symbols = list(set(p.symbol for p in snapshot.positions))
+    total_value = snapshot.total_value
+    weights = {}
+    for p in snapshot.positions:
+        weights[p.symbol] = weights.get(p.symbol, 0) + p.current_value / total_value
+
+    # ESG Scores
+    st.subheader("ESG Scores")
+    with st.spinner("Calculating ESG scores..."):
+        scores = esg.calculate_esg_scores(symbols, weights)
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Portfolio ESG Score", f"{scores['portfolio_esg_score']:.1f}/100")
+    with col2:
+        st.metric("Environmental", f"{scores['portfolio_environmental']:.1f}")
+    with col3:
+        st.metric("Social", f"{scores['portfolio_social']:.1f}")
+    with col4:
+        st.metric("Governance", f"{scores['portfolio_governance']:.1f}")
+
+    st.write(f"**Portfolio ESG Rating:** {scores['portfolio_esg_rating']}")
+
+    # Position-level scores
+    score_data = pd.DataFrame([
+        {
+            'Symbol': symbol,
+            'ESG Score': v['total_esg'],
+            'Rating': v['esg_rating'],
+            'Environmental': v['environmental'],
+            'Social': v['social'],
+            'Governance': v['governance'],
+            'Sector': v['sector'],
+            'E Risk': v['e_risk'],
+        }
+        for symbol, v in scores['position_scores'].items()
+    ]).sort_values('ESG Score', ascending=False)
+
+    # ESG score heatmap
+    fig = px.bar(
+        score_data, x='Symbol', y=['Environmental', 'Social', 'Governance'],
+        title='ESG Scores by Position',
+        barmode='group',
+        color_discrete_sequence=['#2ecc71', '#3498db', '#9b59b6']
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.dataframe(score_data, use_container_width=True)
+
+    # Exclusion Screening
+    st.subheader("Exclusion Screening")
+    screen_options = list(ESGAnalyzer.EXCLUSION_SCREENS.keys())
+    selected_screens = st.multiselect(
+        "Select screens to apply",
+        screen_options,
+        default=screen_options
+    )
+
+    screening = esg.run_exclusion_screening(symbols, selected_screens)
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Compliant Positions", f"{screening['n_clean']}/{len(symbols)}")
+    with col2:
+        st.metric("Compliance Rate", f"{screening['pct_compliant']:.1f}%")
+    with col3:
+        violated = screening['n_violations']
+        st.metric("Violations", violated)
+
+    if screening['violations']:
+        st.warning("Positions violating exclusion screens:")
+        for symbol, screens in screening['violations'].items():
+            st.write(f"- **{symbol}**: {', '.join(screens)}")
+
+    # Compliance Rules
+    st.subheader("Compliance Monitoring")
+    compliance = esg.check_compliance_rules(weights)
+
+    if compliance['is_compliant']:
+        st.success("Portfolio is fully compliant with all rules.")
+    else:
+        st.error(f"Portfolio has {compliance['n_violations']} compliance violation(s).")
+
+    if compliance['violations']:
+        for v in compliance['violations']:
+            st.error(f"**{v['rule']}** ({v['symbol']}): Limit {v['limit']}, Actual {v['actual']}")
+
+    if compliance['warnings']:
+        for w in compliance['warnings']:
+            st.warning(f"**{w['rule']}** ({w['symbol']}): Limit {w['limit']}, Actual {w['actual']}")
+
+    # Carbon Metrics
+    st.subheader("Carbon Footprint")
+    carbon = esg.calculate_carbon_metrics(symbols, weights, total_value)
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Carbon Intensity", f"{carbon['portfolio_carbon_intensity']:.0f} tCO2e/$M")
+    with col2:
+        st.metric("Total Footprint", f"{carbon['total_footprint_tco2']:.1f} tCO2e")
+    with col3:
+        st.metric("vs Benchmark", f"{carbon['vs_benchmark_pct']:+.1f}%")
+    with col4:
+        st.metric("Carbon Risk", carbon['carbon_risk'])
+
+    # Carbon by position
+    carbon_data = pd.DataFrame([
+        {'Symbol': s, 'Carbon Intensity': v['carbon_intensity'], 'Sector': v['sector']}
+        for s, v in carbon['position_carbon'].items()
+    ]).sort_values('Carbon Intensity', ascending=False)
+
+    fig = px.bar(
+        carbon_data, x='Symbol', y='Carbon Intensity',
+        title='Carbon Intensity by Position (tCO2e per $M Revenue)',
+        color='Sector',
+    )
+    fig.add_hline(y=carbon['benchmark_intensity'], line_dash="dash",
+                  annotation_text="S&P 500 Benchmark", line_color="red")
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def display_liquidity_analysis(calculator):
+    """Display liquidity analysis dashboard."""
+    st.header("Liquidity Analysis")
+
+    snapshot = calculator.get_snapshot()
+    if not snapshot.positions:
+        st.info("No positions to analyze.")
+        return
+
+    analyzer = LiquidityAnalyzer()
+    total_value = snapshot.total_value
+
+    # Build positions dict
+    positions = {}
+    for p in snapshot.positions:
+        positions[p.symbol] = positions.get(p.symbol, 0) + p.current_value
+
+    lookback = st.slider("Lookback Period (days)", 30, 252, 90)
+
+    with st.spinner("Analyzing liquidity..."):
+        try:
+            liq_report = analyzer.analyze_portfolio_liquidity(positions, lookback)
+        except Exception as e:
+            st.error(f"Error analyzing liquidity: {e}")
+            return
+
+    # Portfolio-level metrics
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Liquidity Score", f"{liq_report['liquidity_score']:.0f}/100")
+    with col2:
+        st.metric("Liquidation Cost",
+                   format_currency(liq_report['total_liquidation_cost']),
+                   delta=f"{liq_report['liquidation_cost_pct']:.2f}%")
+    with col3:
+        st.metric("Max Days to Liquidate", f"{liq_report['max_days_to_full_liquidation']:.0f}")
+    with col4:
+        st.metric("Total AUM", format_currency(total_value))
+
+    # Tier distribution
+    st.subheader("Liquidity Tier Distribution")
+    if liq_report['tier_distribution']:
+        tier_data = pd.DataFrame([
+            {'Tier': k, 'Weight (%)': v * 100}
+            for k, v in liq_report['tier_distribution'].items()
+        ])
+        fig = px.pie(
+            tier_data, values='Weight (%)', names='Tier',
+            title='Portfolio Liquidity Distribution',
+            color='Tier',
+            color_discrete_map={t: v['color'] for t, v in LiquidityAnalyzer.LIQUIDITY_TIERS.items()}
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Position-level analysis
+    st.subheader("Position Liquidity Details")
+    pos_data = []
+    for symbol, analysis in liq_report['position_analysis'].items():
+        if 'error' in analysis:
+            continue
+        pos_data.append({
+            'Symbol': symbol,
+            'Value': format_currency(analysis['position_value']),
+            'Avg Daily Value': format_currency(analysis['avg_daily_value']),
+            'Spread (bps)': f"{analysis['spread_bps']:.1f}",
+            'Days to Liquidate': f"{analysis['days_to_liquidate_10pct']:.1f}",
+            'Tier': analysis['liquidity_tier'],
+            '% of ADV': f"{analysis['pct_of_adv']:.1f}%",
+            'Impact Cost': f"{analysis['market_impact']['total_cost_pct']:.3f}%" if 'market_impact' in analysis else 'N/A',
+        })
+
+    if pos_data:
+        st.dataframe(pd.DataFrame(pos_data), use_container_width=True)
+
+    # Liquidity at Risk
+    st.subheader("Liquidity at Risk")
+    lar = liq_report.get('liquidity_at_risk', {})
+    if lar:
+        lar_data = pd.DataFrame([
+            {'Horizon': k.replace('_', ' ').title(), 'Liquidatable (%)': v['pct_of_portfolio'],
+             'Liquidatable Value': format_currency(v['liquidatable_value'])}
+            for k, v in lar.items()
+        ])
+        st.dataframe(lar_data, use_container_width=True)
+
+        fig = px.bar(
+            lar_data, x='Horizon', y='Liquidatable (%)',
+            title='Portfolio Liquidity at Risk',
+            color='Liquidatable (%)',
+            color_continuous_scale='Greens'
+        )
+        fig.add_hline(y=100, line_dash="dash", line_color="green", annotation_text="100% Liquid")
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Redemption scenario
+    st.subheader("Redemption Scenario Analysis")
+    col1, col2 = st.columns(2)
+    with col1:
+        redemption_pct = st.slider("Redemption Size (% of AUM)", 1, 50, 10)
+    with col2:
+        urgency = st.selectbox("Urgency", ['urgent', 'normal', 'planned'],
+                                format_func=lambda x: {'urgent': 'Urgent (1 day)', 'normal': 'Normal (5 days)',
+                                                       'planned': 'Planned (20 days)'}[x])
+
+    redemption_amount = total_value * redemption_pct / 100
+
+    with st.spinner("Analyzing redemption scenario..."):
+        try:
+            redemption = analyzer.calculate_redemption_risk(positions, redemption_amount, urgency)
+            if 'error' not in redemption:
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Redemption Amount", format_currency(redemption_amount))
+                with col2:
+                    st.metric("Market Impact Cost",
+                              format_currency(redemption['total_market_impact']),
+                              delta=f"{redemption['impact_pct']:.2f}%")
+                with col3:
+                    feasible = "Yes" if redemption['is_feasible'] else "No"
+                    st.metric("Feasible?", feasible)
+        except Exception as e:
+            st.warning(f"Could not complete redemption analysis: {e}")
+
+
+def display_multi_portfolio():
+    """Display multi-portfolio management."""
+    st.header("Multi-Portfolio Management")
+
+    if 'multi_portfolio_manager' not in st.session_state:
+        st.session_state.multi_portfolio_manager = MultiPortfolioManager()
+
+    manager = st.session_state.multi_portfolio_manager
+
+    # Add current portfolio as a fund
+    if st.session_state.portfolio_positions:
+        if st.button("Add Current Portfolio as Fund"):
+            fund_name = st.text_input("Fund Name", value="Main Portfolio", key="new_fund_name")
+            fund = Fund(
+                name=fund_name if fund_name else "Main Portfolio",
+                fund_id=f"fund_{len(manager.funds) + 1}",
+                positions=st.session_state.portfolio_positions,
+                strategy='Long Only',
+            )
+            manager.add_fund(fund)
+            st.success(f"Added {fund.name} to multi-portfolio manager.")
+
+    if not manager.funds:
+        st.info("No funds added yet. Add the current portfolio as a fund to get started.")
+        st.markdown("""
+        ### Multi-Portfolio Management
+
+        This tab allows institutional managers to:
+        - **Track multiple portfolios/funds** simultaneously
+        - **Compare performance** across funds
+        - **Identify position overlap** between portfolios
+        - **Calculate firm-wide exposure** and concentration risk
+        - **Aggregate AUM reporting** across all managed assets
+
+        Upload portfolios or add the current portfolio as a fund to begin.
+        """)
+        return
+
+    # Fund overview
+    st.subheader("Fund Overview")
+    fund_list = manager.list_funds()
+    fund_df = pd.DataFrame(fund_list)
+    if not fund_df.empty:
+        fund_df['total_value'] = fund_df['total_value'].apply(lambda x: format_currency(x))
+        fund_df['total_return_pct'] = fund_df['total_return_pct'].apply(lambda x: f"{x:.2f}%")
+        st.dataframe(fund_df, use_container_width=True)
+
+    # Aggregate view
+    st.subheader("Firm-Wide Aggregate View")
+    aggregate = manager.get_aggregate_view()
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total AUM", format_currency(aggregate['total_aum']))
+    with col2:
+        st.metric("Total Return", f"{aggregate['total_return_pct']:.2f}%")
+    with col3:
+        st.metric("Unique Positions", aggregate['n_unique_positions'])
+    with col4:
+        st.metric("Diversification", aggregate['diversification'])
+
+    # Cross-fund comparison
+    if len(manager.funds) > 1:
+        st.subheader("Fund Comparison")
+        comparison = manager.compare_funds()
+        st.dataframe(comparison, use_container_width=True)
+
+        # Overlap analysis
+        st.subheader("Position Overlap Analysis")
+        fund_ids = list(manager.funds.keys())
+        for i in range(len(fund_ids)):
+            for j in range(i + 1, len(fund_ids)):
+                overlap = manager.find_overlap(fund_ids[i], fund_ids[j])
+                st.write(f"**{overlap['fund_1']} vs {overlap['fund_2']}:**")
+                st.write(f"- Common positions: {overlap['n_common']} ({overlap['jaccard_similarity']:.1f}% Jaccard similarity)")
+                st.write(f"- Overlap weight: {overlap['overlap_weight_fund_1']:.1f}% / {overlap['overlap_weight_fund_2']:.1f}%")
+
+
+def display_client_report(calculator):
+    """Display client report generation."""
+    st.header("Client Report")
+
+    snapshot = calculator.get_snapshot()
+    if not snapshot.positions:
+        st.info("No positions for report generation.")
+        return
+
+    reporter = ClientReportGenerator()
+    total_value = snapshot.total_value
+
+    st.subheader("Report Configuration")
+    col1, col2 = st.columns(2)
+    with col1:
+        report_period = st.selectbox("Report Period", ['MTD', 'QTD', 'YTD', '1Y'], index=2)
+        management_fee = st.number_input("Management Fee (%)", value=0.75, step=0.05) / 100
+    with col2:
+        benchmark_name = st.selectbox("Benchmark", list(BENCHMARKS.keys()), index=0)
+        performance_fee = st.number_input("Performance Fee (%)", value=0.0, step=1.0) / 100
+
+    if st.button("Generate Report"):
+        with st.spinner("Generating institutional client report..."):
+            # Executive Summary
+            st.subheader("Executive Summary")
+            inception_date = min(p.purchase_date for p in snapshot.positions)
+            total_return = snapshot.total_return_pct / 100
+
+            summary = reporter.generate_executive_summary(
+                total_value, total_return, 0, report_period, inception_date
+            )
+
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Portfolio Value", format_currency(summary['portfolio_value']))
+            with col2:
+                st.metric("Total Return", f"{summary['total_return']*100:.2f}%")
+            with col3:
+                st.metric("Active Return", f"{summary['active_return']*100:.2f}%")
+
+            st.write(f"**Report Date:** {summary['report_date']}")
+            st.write(f"**Inception:** {summary['inception_date']}")
+
+            # Holdings
+            st.subheader("Top Holdings")
+            positions_data = [
+                {
+                    'symbol': p.symbol,
+                    'description': p.description or p.symbol,
+                    'asset_class': p.asset_class or 'N/A',
+                    'value': p.current_value,
+                    'return_pct': p.unrealized_gain_loss_pct,
+                }
+                for p in snapshot.positions
+            ]
+            holdings_df = reporter.generate_holdings_summary(positions_data, total_value)
+            st.dataframe(holdings_df, use_container_width=True)
+
+            # Allocation Summary
+            st.subheader("Asset Allocation")
+            allocation = snapshot.get_allocation()
+            alloc_df = reporter.generate_allocation_summary(allocation)
+            st.dataframe(alloc_df, use_container_width=True)
+
+            fig = px.pie(
+                values=list(allocation.values()),
+                names=list(allocation.keys()),
+                title="Portfolio Allocation"
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Fee Disclosure
+            st.subheader("Fee Disclosure")
+            fees = reporter.generate_fee_disclosure(
+                total_value, management_fee, performance_fee, total_return
+            )
+
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Gross Return", f"{fees['gross_return_pct']:.2f}%")
+            with col2:
+                st.metric("Total Fees", format_currency(fees['total_fees_dollar']))
+            with col3:
+                st.metric("Net Return", f"{fees['net_return_pct']:.2f}%")
+
+            # Commentary
+            st.subheader("Performance Commentary")
+            top = sorted(positions_data, key=lambda x: x.get('return_pct', 0), reverse=True)[:3]
+            bottom = sorted(positions_data, key=lambda x: x.get('return_pct', 0))[:3]
+
+            top_contrib = [{'symbol': p['symbol'], 'contribution': p['return_pct'] / 100} for p in top]
+            bottom_contrib = [{'symbol': p['symbol'], 'contribution': p['return_pct'] / 100} for p in bottom]
+
+            commentary = reporter.generate_commentary(
+                total_return, 0, top_contrib, bottom_contrib
+            )
+            st.markdown(commentary)
+
+            # Export button
+            report_data = reporter.generate_full_report(
+                {
+                    'total_value': total_value,
+                    'total_return': total_return,
+                    'positions': positions_data,
+                    'top_contributors': top_contrib,
+                    'bottom_contributors': bottom_contrib,
+                },
+            )
+
+            report_json = reporter.export_report_data(report_data, format='json')
+            st.download_button(
+                "Download Report (JSON)",
+                report_json,
+                file_name=f"client_report_{datetime.now().strftime('%Y%m%d')}.json",
+                mime="application/json"
+            )
+
+
 def main():
     """Main application."""
     # Render sidebar
     sidebar()
 
     # Title
-    st.title("📊 Portfolio Analysis & Tracking Dashboard")
+    st.title("📊 Institutional Portfolio Management Platform")
 
     # Check if portfolio is loaded
     if not st.session_state.portfolio_positions:
@@ -2693,13 +3781,19 @@ def main():
     # Create calculator
     calculator = PortfolioCalculator(st.session_state.portfolio_positions)
 
-    # Tabs for different sections
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12, tab13, tab14, tab15 = st.tabs([
+    # Tabs for different sections - Institutional Grade
+    tab_names = [
         "Overview",
         "Performance",
+        "Attribution",
         "Benchmark",
+        "Factor Analysis",
+        "Risk Management",
         "Macro Indicators",
         "Correlations",
+        "Fixed Income",
+        "ESG & Compliance",
+        "Liquidity",
         "LTCMA",
         "Monte Carlo",
         "Retirement",
@@ -2709,53 +3803,80 @@ def main():
         "Optimization",
         "Sectors",
         "Goals",
-        "AI Insights"
-    ])
+        "AI Insights",
+        "Multi-Portfolio",
+        "Client Report",
+    ]
+    tabs = st.tabs(tab_names)
 
-    with tab1:
+    with tabs[0]:
         display_portfolio_overview(calculator)
 
-    with tab2:
+    with tabs[1]:
         display_performance_metrics(calculator)
 
-    with tab3:
+    with tabs[2]:
+        display_performance_attribution(calculator)
+
+    with tabs[3]:
         display_benchmark_comparison(calculator)
 
-    with tab4:
+    with tabs[4]:
+        display_factor_analysis(calculator)
+
+    with tabs[5]:
+        display_risk_management(calculator)
+
+    with tabs[6]:
         display_macro_indicators()
 
-    with tab5:
+    with tabs[7]:
         display_correlation_analysis(calculator)
 
-    with tab6:
+    with tabs[8]:
+        display_fixed_income()
+
+    with tabs[9]:
+        display_esg_compliance(calculator)
+
+    with tabs[10]:
+        display_liquidity_analysis(calculator)
+
+    with tabs[11]:
         display_ltcma_analysis()
 
-    with tab7:
+    with tabs[12]:
         display_monte_carlo_simulation(calculator)
 
-    with tab8:
+    with tabs[13]:
         display_retirement_planning(calculator)
 
-    with tab9:
+    with tabs[14]:
         display_tax_planning(calculator)
 
-    with tab10:
+    with tabs[15]:
         display_rebalancing(calculator)
 
-    with tab11:
+    with tabs[16]:
         display_dividends(calculator)
 
-    with tab12:
+    with tabs[17]:
         display_optimization(calculator)
 
-    with tab13:
+    with tabs[18]:
         display_sector_analysis(calculator)
 
-    with tab14:
+    with tabs[19]:
         display_goal_planning(calculator)
 
-    with tab15:
+    with tabs[20]:
         display_ai_insights(calculator)
+
+    with tabs[21]:
+        display_multi_portfolio()
+
+    with tabs[22]:
+        display_client_report(calculator)
 
 
 if __name__ == "__main__":
