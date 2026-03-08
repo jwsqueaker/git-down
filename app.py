@@ -41,6 +41,209 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Mobile-responsive CSS optimized for iPhone 16 Pro (393x852pt, 3x)
+st.markdown("""
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Portfolio">
+<meta name="theme-color" content="#1f77b4">
+<link rel="manifest" href="./static/manifest.json">
+<link rel="apple-touch-icon" href="./static/icon-192.png">
+
+<style>
+/* ===== iPhone 16 Pro Responsive Layout (393x852pt) ===== */
+
+/* Global mobile reset */
+@media screen and (max-width: 480px) {
+    /* Safe area insets for Dynamic Island */
+    .main .block-container {
+        padding-top: env(safe-area-inset-top, 20px) !important;
+        padding-bottom: env(safe-area-inset-bottom, 20px) !important;
+        padding-left: 0.75rem !important;
+        padding-right: 0.75rem !important;
+        max-width: 100% !important;
+    }
+
+    /* Stack all columns vertically on mobile */
+    [data-testid="column"] {
+        width: 100% !important;
+        flex: 1 1 100% !important;
+        min-width: 100% !important;
+    }
+
+    /* Horizontal row -> vertical stack */
+    .row-widget.stHorizontalBlock,
+    [data-testid="stHorizontalBlock"] {
+        flex-direction: column !important;
+        gap: 0.5rem !important;
+    }
+
+    /* Sidebar: full-width overlay on mobile */
+    [data-testid="stSidebar"] {
+        min-width: 100vw !important;
+        max-width: 100vw !important;
+        z-index: 999 !important;
+    }
+
+    [data-testid="stSidebar"][aria-expanded="false"] {
+        min-width: 0 !important;
+        max-width: 0 !important;
+    }
+
+    /* Compact header */
+    h1 {
+        font-size: 1.4rem !important;
+        line-height: 1.2 !important;
+    }
+    h2 {
+        font-size: 1.15rem !important;
+    }
+    h3 {
+        font-size: 1rem !important;
+    }
+
+    /* Metric cards: compact for mobile */
+    [data-testid="stMetric"] {
+        padding: 0.5rem !important;
+        background: var(--secondary-background-color, #f0f2f6);
+        border-radius: 8px;
+    }
+    [data-testid="stMetricLabel"] {
+        font-size: 0.75rem !important;
+    }
+    [data-testid="stMetricValue"] {
+        font-size: 1.1rem !important;
+    }
+    [data-testid="stMetricDelta"] {
+        font-size: 0.7rem !important;
+    }
+
+    /* Tabs: scrollable horizontal strip */
+    .stTabs [data-baseweb="tab-list"] {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        flex-wrap: nowrap !important;
+        gap: 0 !important;
+        padding-bottom: 2px;
+    }
+    .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar {
+        display: none;
+    }
+    .stTabs [data-baseweb="tab"] {
+        font-size: 0.7rem !important;
+        padding: 0.4rem 0.6rem !important;
+        white-space: nowrap !important;
+        flex-shrink: 0 !important;
+    }
+
+    /* Tables: horizontal scroll */
+    [data-testid="stDataFrame"],
+    [data-testid="stTable"],
+    .stDataFrame {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+        font-size: 0.75rem !important;
+    }
+
+    /* Charts: full-width, constrained height */
+    [data-testid="stPlotlyChart"],
+    .js-plotly-plot {
+        width: 100% !important;
+        max-height: 300px !important;
+    }
+    [data-testid="stPlotlyChart"] .plotly .main-svg {
+        width: 100% !important;
+    }
+
+    /* Buttons: full width, touch-friendly */
+    .stButton > button {
+        width: 100% !important;
+        min-height: 44px !important; /* Apple HIG min tap target */
+        font-size: 0.9rem !important;
+        border-radius: 10px !important;
+    }
+
+    /* Inputs: touch-friendly sizing */
+    .stTextInput > div > div > input,
+    .stNumberInput > div > div > input,
+    .stSelectbox > div > div,
+    .stMultiSelect > div > div {
+        min-height: 44px !important;
+        font-size: 16px !important; /* Prevents iOS zoom on focus */
+    }
+
+    /* Slider: larger touch target */
+    .stSlider [data-baseweb="slider"] [role="slider"] {
+        width: 28px !important;
+        height: 28px !important;
+    }
+
+    /* File uploader */
+    [data-testid="stFileUploader"] {
+        padding: 1rem !important;
+    }
+    [data-testid="stFileUploader"] section {
+        padding: 1rem !important;
+    }
+
+    /* Expander: touch-friendly */
+    .streamlit-expanderHeader {
+        min-height: 44px !important;
+        font-size: 0.9rem !important;
+    }
+
+    /* Remove excessive whitespace */
+    .element-container {
+        margin-bottom: 0.5rem !important;
+    }
+
+    /* Toast/alerts: edge-to-edge */
+    [data-testid="stAlert"] {
+        border-radius: 8px !important;
+        font-size: 0.85rem !important;
+    }
+}
+
+/* ===== PWA standalone mode tweaks ===== */
+@media screen and (display-mode: standalone) {
+    /* Hide Streamlit menu and footer in PWA mode */
+    #MainMenu, header[data-testid="stHeader"], footer {
+        display: none !important;
+    }
+    .main .block-container {
+        padding-top: env(safe-area-inset-top, 48px) !important;
+    }
+}
+
+/* ===== iPhone landscape ===== */
+@media screen and (max-height: 430px) and (orientation: landscape) {
+    .main .block-container {
+        padding-top: 0.5rem !important;
+        padding-bottom: 0.5rem !important;
+    }
+    h1 { font-size: 1.1rem !important; }
+}
+
+/* ===== Smooth scrolling & touch ===== */
+html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+}
+* {
+    -webkit-tap-highlight-color: transparent;
+}
+</style>
+
+<script>
+// Register service worker for PWA
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./static/sw.js').catch(() => {});
+}
+</script>
+""", unsafe_allow_html=True)
+
 # Initialize database
 init_db()
 
