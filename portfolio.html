@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f172a">
+<title>Portfolio Manager</title>
+<style>
+:root {
+  --bg: #0f172a;
+  --surface: #1e293b;
+  --surface2: #334155;
+  --border: #475569;
+  --text: #f1f5f9;
+  --text-dim: #94a3b8;
+  --accent: #3b82f6;
+  --accent2: #8b5cf6;
+  --green: #22c55e;
+  --red: #ef4444;
+  --yellow: #eab308;
+  --orange: #f97316;
+  --cyan: #06b6d4;
+  --radius: 12px;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { font-size: 15px; scroll-behavior: smooth; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; min-height: 100dvh; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+
+/* Header */
+.header { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border-bottom: 1px solid var(--border); padding: 16px 20px; position: sticky; top: 0; z-index: 100; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+.header h1 { font-size: 1.25rem; font-weight: 700; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.header p { font-size: 0.75rem; color: var(--text-dim); margin-top: 2px; }
+
+/* Tab nav */
+.tab-nav { display: flex; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; gap: 4px; padding: 12px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.tab-nav::-webkit-scrollbar { display: none; }
+.tab-btn { flex-shrink: 0; padding: 8px 16px; border: none; border-radius: 20px; background: transparent; color: var(--text-dim); font-size: 0.8rem; font-weight: 500; cursor: pointer; transition: all 0.2s; white-space: nowrap; min-height: 36px; }
+.tab-btn.active { background: var(--accent); color: white; }
+.tab-btn:hover { background: var(--surface2); }
+.tab-btn.active:hover { background: var(--accent); }
+
+/* Content */
+.content { padding: 16px; max-width: 900px; margin: 0 auto; }
+.tab-panel { display: none; animation: fadeIn 0.3s ease; }
+.tab-panel.active { display: block; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Cards */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; }
+.card-title { font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+
+/* Metric grid */
+.metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px; }
+.metric { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
+.metric .label { font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
+.metric .value { font-size: 1.3rem; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.metric .sub { font-size: 0.7rem; color: var(--text-dim); margin-top: 2px; }
+.metric.wide { grid-column: span 2; }
+
+/* Table */
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: var(--radius); border: 1px solid var(--border); }
+table { width: 100%; border-collapse: collapse; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+th { background: var(--surface2); padding: 10px 12px; text-align: left; font-weight: 600; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); white-space: nowrap; position: sticky; top: 0; cursor: pointer; user-select: none; }
+th:hover { color: var(--text); }
+th.sorted-asc::after { content: " ▲"; font-size: 0.6rem; }
+th.sorted-desc::after { content: " ▼"; font-size: 0.6rem; }
+td { padding: 10px 12px; border-top: 1px solid var(--border); white-space: nowrap; }
+tr:hover td { background: rgba(59, 130, 246, 0.05); }
+.text-right { text-align: right; }
+.text-green { color: var(--green); }
+.text-red { color: var(--red); }
+.text-yellow { color: var(--yellow); }
+
+/* Bar */
+.bar-track { background: var(--surface2); border-radius: 4px; height: 8px; overflow: hidden; min-width: 80px; }
+.bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s ease; }
+
+/* Chart canvas */
+canvas { width: 100% !important; height: auto !important; border-radius: var(--radius); }
+
+/* Upload area */
+.upload-area { border: 2px dashed var(--border); border-radius: var(--radius); padding: 40px 20px; text-align: center; cursor: pointer; transition: all 0.2s; }
+.upload-area:hover, .upload-area.drag-over { border-color: var(--accent); background: rgba(59, 130, 246, 0.05); }
+.upload-area input { display: none; }
+.upload-icon { font-size: 2.5rem; margin-bottom: 12px; }
+.upload-text { color: var(--text-dim); font-size: 0.85rem; }
+.upload-text strong { color: var(--accent); }
+
+/* Score ring */
+.score-ring { width: 120px; height: 120px; margin: 0 auto 16px; position: relative; }
+.score-ring svg { transform: rotate(-90deg); }
+.score-ring .label { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
+.score-ring .grade { font-size: 1.8rem; font-weight: 800; }
+.score-ring .pts { font-size: 0.7rem; color: var(--text-dim); }
+
+/* Buttons */
+.btn { padding: 10px 20px; border: none; border-radius: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.2s; min-height: 44px; }
+.btn-primary { background: var(--accent); color: white; }
+.btn-primary:hover { background: #2563eb; }
+.btn-outline { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+.btn-sm { padding: 6px 12px; font-size: 0.75rem; min-height: 32px; }
+
+/* Section title */
+.section-title { font-size: 1rem; font-weight: 700; margin: 20px 0 12px; display: flex; align-items: center; gap: 8px; }
+.section-title::before { content: ''; width: 3px; height: 18px; background: var(--accent); border-radius: 2px; }
+
+/* Toast */
+.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--green); color: white; padding: 10px 24px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; z-index: 1000; animation: toastIn 0.3s ease, toastOut 0.3s ease 2s forwards; }
+@keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(20px); } }
+@keyframes toastOut { to { opacity: 0; transform: translateX(-50%) translateY(20px); } }
+
+/* Responsive iPhone 16 Pro */
+@media (max-width: 430px) {
+  html { font-size: 14px; }
+  .metrics { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .content { padding: 12px; }
+  .tab-btn { padding: 6px 12px; font-size: 0.75rem; }
+}
+@media (min-width: 600px) {
+  .metrics { grid-template-columns: repeat(4, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Portfolio Manager</h1>
+  <p id="header-sub">Upload a CSV to get started</p>
+</div>
+
+<nav class="tab-nav" id="tabNav">
+  <button class="tab-btn active" data-tab="upload">Upload</button>
+  <button class="tab-btn" data-tab="overview">Overview</button>
+  <button class="tab-btn" data-tab="positions">Positions</button>
+  <button class="tab-btn" data-tab="allocation">Allocation</button>
+  <button class="tab-btn" data-tab="concentration">Concentration</button>
+  <button class="tab-btn" data-tab="holdings">Holdings</button>
+  <button class="tab-btn" data-tab="diversification">Score</button>
+</nav>
+
+<div class="content">
+  <!-- Upload -->
+  <div class="tab-panel active" id="panel-upload">
+    <div class="upload-area" id="uploadArea">
+      <div class="upload-icon">📂</div>
+      <div class="upload-text"><strong>Tap to upload</strong> or drag & drop a CSV file</div>
+      <div class="upload-text" style="margin-top:8px;font-size:0.75rem;">Columns: symbol, shares, purchase_date, purchase_price</div>
+      <input type="file" id="csvInput" accept=".csv">
+    </div>
+    <div style="text-align:center;margin-top:20px;">
+      <button class="btn btn-outline" onclick="loadSample()">Load Sample Portfolio</button>
+    </div>
+    <div class="card" style="margin-top:20px;">
+      <div class="card-title">Or paste CSV data</div>
+      <textarea id="csvPaste" rows="6" style="width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:10px;font-family:monospace;font-size:0.8rem;resize:vertical;" placeholder="asset_class,description,symbol,shares,purchase_date,purchase_price&#10;U.S. Large Cap Equity,Apple Inc.,AAPL,100,2023-01-15,150.25"></textarea>
+      <button class="btn btn-primary btn-sm" style="margin-top:8px;" onclick="loadPasted()">Load Pasted Data</button>
+    </div>
+  </div>
+
+  <!-- Overview -->
+  <div class="tab-panel" id="panel-overview">
+    <div class="metrics" id="overviewMetrics"></div>
+    <div class="card"><div class="card-title">Allocation</div><canvas id="chartPie" height="280"></canvas></div>
+  </div>
+
+  <!-- Positions -->
+  <div class="tab-panel" id="panel-positions">
+    <div class="section-title">All Positions</div>
+    <div class="table-wrap" id="positionsTable"></div>
+  </div>
+
+  <!-- Allocation -->
+  <div class="tab-panel" id="panel-allocation">
+    <div class="section-title">Asset Class Breakdown</div>
+    <div id="allocationBars"></div>
+    <div class="card" style="margin-top:16px;"><canvas id="chartAlloc" height="280"></canvas></div>
+  </div>
+
+  <!-- Concentration -->
+  <div class="tab-panel" id="panel-concentration">
+    <div class="section-title">Concentration Risk</div>
+    <div class="card"><canvas id="chartConc" height="300"></canvas></div>
+    <div class="table-wrap" style="margin-top:12px;" id="concTable"></div>
+  </div>
+
+  <!-- Holdings -->
+  <div class="tab-panel" id="panel-holdings">
+    <div class="section-title">Holding Period Analysis</div>
+    <div class="metrics" id="holdingMetrics"></div>
+    <div class="table-wrap" id="holdingsTable"></div>
+  </div>
+
+  <!-- Diversification Score -->
+  <div class="tab-panel" id="panel-diversification">
+    <div class="section-title">Diversification Scorecard</div>
+    <div class="card" style="text-align:center;">
+      <div class="score-ring" id="scoreRing"></div>
+      <div id="scoreDetails"></div>
+    </div>
+    <div id="scoreBreakdown"></div>
+  </div>
+</div>
+
+<script>
+// ─── State ───
+let portfolio = [];
+let sortCol = null, sortDir = 1;
+
+// ─── Sample data ───
+const SAMPLE = `asset_class,description,symbol,shares,purchase_date,purchase_price
+U.S. Large Cap Equity,Apple Inc.,AAPL,100,2023-01-15,150.25
+U.S. Large Cap Equity,Microsoft Corporation,MSFT,50,2023-02-20,275.50
+U.S. Large Cap Equity,Alphabet Inc.,GOOGL,25,2023-03-10,105.75
+U.S. Large Cap Equity,Amazon.com Inc.,AMZN,30,2023-01-25,98.50
+U.S. Large Cap Equity,SPDR S&P 500 ETF Trust,SPY,200,2023-01-05,385.50
+U.S. Large Cap Equity,Invesco QQQ Trust,QQQ,75,2023-02-15,310.25
+U.S. Large Cap Equity,Vanguard Total Stock Market ETF,VTI,100,2023-03-01,195.75
+U.S. Large Cap Equity,NVIDIA Corporation,NVDA,40,2023-01-10,165.30
+U.S. Large Cap Equity,Tesla Inc.,TSLA,25,2023-02-05,195.80
+U.S. Large Cap Equity,Meta Platforms Inc.,META,35,2023-03-20,185.25`;
+
+// ─── CSV Parser ───
+function parseCSV(text) {
+  const lines = text.trim().split('\n').map(l => l.trim()).filter(l => l);
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+  const si = headers.indexOf('symbol');
+  const shi = headers.indexOf('shares');
+  const di = headers.indexOf('purchase_date');
+  const pi = headers.indexOf('purchase_price');
+  const ai = headers.indexOf('asset_class');
+  const dsi = headers.indexOf('description');
+  if (si < 0 || shi < 0 || di < 0 || pi < 0) { alert('Missing required columns: symbol, shares, purchase_date, purchase_price'); return []; }
+  const positions = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(',').map(c => c.trim());
+    if (!cols[si]) continue;
+    positions.push({
+      symbol: cols[si].toUpperCase(),
+      shares: parseFloat(cols[shi]) || 0,
+      purchase_date: cols[di],
+      purchase_price: parseFloat(cols[pi]) || 0,
+      asset_class: ai >= 0 ? cols[ai] || 'Unclassified' : 'Unclassified',
+      description: dsi >= 0 ? cols[dsi] || '' : '',
+    });
+  }
+  return positions;
+}
+
+// ─── Calculations ───
+const costBasis = p => p.shares * p.purchase_price;
+const totalCost = () => portfolio.reduce((s, p) => s + costBasis(p), 0);
+const weight = (p, total) => total ? costBasis(p) / total : 0;
+const daysHeld = p => { const d = new Date(p.purchase_date); return Math.floor((Date.now() - d) / 86400000); };
+const yearsHeld = p => daysHeld(p) / 365.25;
+const hhi = () => { const t = totalCost(); return portfolio.reduce((s, p) => s + weight(p, t) ** 2, 0); };
+const effectivePositions = () => { const h = hhi(); return h > 0 ? 1 / h : portfolio.length; };
+
+function classTotals() {
+  const m = {};
+  portfolio.forEach(p => { const c = p.asset_class || 'Unclassified'; m[c] = (m[c] || 0) + costBasis(p); });
+  return Object.entries(m).sort((a, b) => b[1] - a[1]);
+}
+
+function diversificationScore() {
+  const t = totalCost();
+  const n = portfolio.length;
+  const eff = effectivePositions();
+  const classes = new Set(portfolio.map(p => p.asset_class || 'Unclassified')).size;
+  const sorted = [...portfolio].sort((a, b) => costBasis(b) - costBasis(a));
+  const top3 = sorted.slice(0, 3).reduce((s, p) => s + weight(p, t), 0) * 100;
+  let score = Math.min(25, n * 2.5) + Math.min(25, eff * 2.5) + Math.min(25, classes * 8) + Math.max(0, 25 - Math.max(0, top3 - 30));
+  score = Math.min(100, score);
+  const grade = score >= 90 ? 'A+' : score >= 80 ? 'A' : score >= 70 ? 'B' : score >= 60 ? 'C' : score >= 50 ? 'D' : 'F';
+  return { score, grade, n, eff, classes, top3, hhi: hhi() };
+}
+
+// ─── Formatters ───
+const fmtUSD = v => (v < 0 ? '-' : '') + '$' + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtPct = v => v.toFixed(1) + '%';
+
+// ─── Colors ───
+const COLORS = ['#3b82f6','#8b5cf6','#06b6d4','#22c55e','#eab308','#f97316','#ef4444','#ec4899','#14b8a6','#6366f1','#f43f5e','#84cc16','#a855f7','#0ea5e9','#fbbf24','#fb923c','#e879f9','#34d399','#facc15','#38bdf8'];
+
+// ─── Tab switching ───
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ─── File upload ───
+const uploadArea = document.getElementById('uploadArea');
+const csvInput = document.getElementById('csvInput');
+uploadArea.addEventListener('click', () => csvInput.click());
+uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('drag-over'); });
+uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'));
+uploadArea.addEventListener('drop', e => { e.preventDefault(); uploadArea.classList.remove('drag-over'); if (e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]); });
+csvInput.addEventListener('change', () => { if (csvInput.files[0]) readFile(csvInput.files[0]); });
+
+function readFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => { portfolio = parseCSV(e.target.result); if (portfolio.length) renderAll(); };
+  reader.readAsText(file);
+}
+function loadSample() { portfolio = parseCSV(SAMPLE); renderAll(); }
+function loadPasted() { const t = document.getElementById('csvPaste').value; if (t.trim()) { portfolio = parseCSV(t); if (portfolio.length) renderAll(); } }
+
+// ─── Render all ───
+function renderAll() {
+  toast(portfolio.length + ' positions loaded');
+  document.getElementById('header-sub').textContent = portfolio.length + ' positions · ' + fmtUSD(totalCost()) + ' cost basis';
+  renderOverview();
+  renderPositions();
+  renderAllocation();
+  renderConcentration();
+  renderHoldings();
+  renderDiversification();
+  // Switch to overview
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelector('[data-tab="overview"]').classList.add('active');
+  document.getElementById('panel-overview').classList.add('active');
+}
+
+// ─── Overview ───
+function renderOverview() {
+  const t = totalCost();
+  const h = hhi();
+  const conc = h < 0.15 ? 'Low' : h < 0.25 ? 'Moderate' : 'High';
+  const concColor = h < 0.15 ? 'var(--green)' : h < 0.25 ? 'var(--yellow)' : 'var(--red)';
+  document.getElementById('overviewMetrics').innerHTML = `
+    <div class="metric wide"><div class="label">Total Cost Basis</div><div class="value">${fmtUSD(t)}</div></div>
+    <div class="metric"><div class="label">Positions</div><div class="value">${portfolio.length}</div></div>
+    <div class="metric"><div class="label">Effective Positions</div><div class="value">${effectivePositions().toFixed(1)}</div></div>
+    <div class="metric"><div class="label">HHI</div><div class="value" style="color:${concColor}">${h.toFixed(4)}</div><div class="sub">${conc} concentration</div></div>
+    <div class="metric"><div class="label">Asset Classes</div><div class="value">${classTotals().length}</div></div>
+  `;
+  drawPieChart();
+}
+
+// ─── Pie Chart ───
+function drawPieChart() {
+  const canvas = document.getElementById('chartPie');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  const w = rect.width - 32;
+  const h = 280;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+
+  const t = totalCost();
+  const sorted = [...portfolio].sort((a, b) => costBasis(b) - costBasis(a));
+  const cx = h / 2, cy = h / 2, r = Math.min(cx, cy) - 10;
+  let angle = -Math.PI / 2;
+
+  sorted.forEach((p, i) => {
+    const slice = (costBasis(p) / t) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, angle, angle + slice);
+    ctx.fillStyle = COLORS[i % COLORS.length];
+    ctx.fill();
+    angle += slice;
+  });
+
+  // Center hole (donut)
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.55, 0, Math.PI * 2);
+  ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--surface').trim();
+  ctx.fill();
+
+  // Legend
+  const lx = h + 10;
+  const maxItems = Math.min(sorted.length, Math.floor((h - 10) / 22));
+  ctx.font = '12px -apple-system, system-ui, sans-serif';
+  sorted.slice(0, maxItems).forEach((p, i) => {
+    const ly = 14 + i * 22;
+    ctx.fillStyle = COLORS[i % COLORS.length];
+    ctx.fillRect(lx, ly - 8, 10, 10);
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText(`${p.symbol} ${fmtPct(weight(p, t) * 100)}`, lx + 16, ly);
+  });
+}
+
+// ─── Positions Table ───
+function renderPositions() {
+  const t = totalCost();
+  const sorted = [...portfolio].sort((a, b) => costBasis(b) - costBasis(a));
+  const maxCB = Math.max(...sorted.map(costBasis));
+  let html = `<table><thead><tr>
+    <th onclick="sortPositions('symbol')">Symbol</th>
+    <th onclick="sortPositions('shares')" class="text-right">Shares</th>
+    <th onclick="sortPositions('purchase_price')" class="text-right">Price</th>
+    <th onclick="sortPositions('cost')" class="text-right">Cost Basis</th>
+    <th onclick="sortPositions('weight')" class="text-right">Weight</th>
+    <th>Allocation</th>
+  </tr></thead><tbody>`;
+  sorted.forEach((p, i) => {
+    const cb = costBasis(p);
+    const w = weight(p, t) * 100;
+    const pct = (cb / maxCB * 100);
+    html += `<tr>
+      <td><strong>${p.symbol}</strong></td>
+      <td class="text-right">${p.shares.toLocaleString()}</td>
+      <td class="text-right">${fmtUSD(p.purchase_price)}</td>
+      <td class="text-right">${fmtUSD(cb)}</td>
+      <td class="text-right">${fmtPct(w)}</td>
+      <td><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${COLORS[i % COLORS.length]}"></div></div></td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById('positionsTable').innerHTML = html;
+}
+
+function sortPositions(col) {
+  if (sortCol === col) sortDir *= -1; else { sortCol = col; sortDir = 1; }
+  const key = col === 'cost' ? p => costBasis(p) : col === 'weight' ? p => costBasis(p) : p => p[col];
+  const isNum = ['shares','purchase_price','cost','weight'].includes(col);
+  portfolio.sort((a, b) => {
+    const va = key(a), vb = key(b);
+    return isNum ? (va - vb) * sortDir : String(va).localeCompare(String(vb)) * sortDir;
+  });
+  renderPositions();
+}
+
+// ─── Allocation ───
+function renderAllocation() {
+  const t = totalCost();
+  const classes = classTotals();
+  const maxVal = classes[0]?.[1] || 1;
+  let html = '';
+  classes.forEach(([cls, val], i) => {
+    const pct = (val / t * 100);
+    html += `<div class="card" style="margin-bottom:8px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="font-weight:600;font-size:0.85rem;">${cls}</span>
+        <span style="font-size:0.85rem;color:var(--text-dim);">${fmtUSD(val)} · ${fmtPct(pct)}</span>
+      </div>
+      <div class="bar-track" style="height:12px;"><div class="bar-fill" style="width:${val/maxVal*100}%;background:${COLORS[i % COLORS.length]};"></div></div>
+    </div>`;
+  });
+  document.getElementById('allocationBars').innerHTML = html;
+
+  // Horizontal bar chart
+  const canvas = document.getElementById('chartAlloc');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  const w = rect.width - 32;
+  const bh = 36;
+  const h = classes.length * bh + 20;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+
+  const labelW = 160;
+  const barMaxW = w - labelW - 80;
+  classes.forEach(([cls, val], i) => {
+    const y = i * bh + 10;
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '12px -apple-system, system-ui, sans-serif';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(cls.length > 22 ? cls.slice(0, 20) + '…' : cls, 4, y + bh / 2 - 2);
+    const bw = (val / maxVal) * barMaxW;
+    ctx.fillStyle = COLORS[i % COLORS.length];
+    ctx.beginPath();
+    ctx.roundRect(labelW, y + 4, bw, bh - 12, 4);
+    ctx.fill();
+    ctx.fillStyle = '#f1f5f9';
+    ctx.fillText(fmtPct(val / t * 100), labelW + bw + 8, y + bh / 2 - 2);
+  });
+}
+
+// ─── Concentration ───
+function renderConcentration() {
+  const t = totalCost();
+  const sorted = [...portfolio].sort((a, b) => costBasis(b) - costBasis(a));
+  let cum = 0;
+
+  // Table
+  let html = `<table><thead><tr><th>#</th><th>Symbol</th><th class="text-right">Weight</th><th class="text-right">Cumulative</th><th></th></tr></thead><tbody>`;
+  sorted.forEach((p, i) => {
+    const w = weight(p, t) * 100;
+    const prev = cum;
+    cum += w;
+    let marker = '';
+    if (cum >= 50 && prev < 50) marker = '<span style="color:var(--yellow);font-size:0.75rem;">◄ 50%</span>';
+    if (cum >= 80 && prev < 80) marker = '<span style="color:var(--orange);font-size:0.75rem;">◄ 80%</span>';
+    html += `<tr><td>${i + 1}</td><td><strong>${p.symbol}</strong></td><td class="text-right">${fmtPct(w)}</td><td class="text-right">${fmtPct(cum)}</td><td>${marker}</td></tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById('concTable').innerHTML = html;
+
+  // Cumulative line chart
+  const canvas = document.getElementById('chartConc');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  const w2 = rect.width - 32, h = 300;
+  canvas.width = w2 * dpr; canvas.height = h * dpr;
+  canvas.style.width = w2 + 'px'; canvas.style.height = h + 'px';
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w2, h);
+
+  const pad = { t: 20, r: 20, b: 40, l: 50 };
+  const cw = w2 - pad.l - pad.r, ch = h - pad.t - pad.b;
+
+  // Grid
+  ctx.strokeStyle = '#334155'; ctx.lineWidth = 0.5;
+  [0, 25, 50, 75, 100].forEach(v => {
+    const y = pad.t + ch - (v / 100) * ch;
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + cw, y); ctx.stroke();
+    ctx.fillStyle = '#94a3b8'; ctx.font = '11px -apple-system, system-ui, sans-serif'; ctx.textAlign = 'right';
+    ctx.fillText(v + '%', pad.l - 8, y + 4);
+  });
+
+  // Bars + line
+  cum = 0;
+  const bw = cw / sorted.length;
+  const points = [];
+  sorted.forEach((p, i) => {
+    const wt = weight(p, t) * 100;
+    cum += wt;
+    const x = pad.l + i * bw + bw / 2;
+    const bh2 = (wt / 100) * ch;
+    const y = pad.t + ch - bh2;
+    ctx.fillStyle = COLORS[i % COLORS.length] + 'aa';
+    ctx.beginPath(); ctx.roundRect(x - bw * 0.35, y, bw * 0.7, bh2, [4, 4, 0, 0]); ctx.fill();
+    points.push({ x, y: pad.t + ch - (cum / 100) * ch });
+    // Label
+    ctx.fillStyle = '#94a3b8'; ctx.font = '10px -apple-system, system-ui, sans-serif'; ctx.textAlign = 'center';
+    ctx.save(); ctx.translate(x, h - pad.b + 14); ctx.rotate(-0.4); ctx.fillText(p.symbol, 0, 0); ctx.restore();
+  });
+
+  // Cumulative line
+  ctx.beginPath(); ctx.strokeStyle = var_accent(); ctx.lineWidth = 2.5;
+  points.forEach((pt, i) => i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y));
+  ctx.stroke();
+  points.forEach(pt => { ctx.beginPath(); ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2); ctx.fillStyle = var_accent(); ctx.fill(); });
+
+  // 50%/80% lines
+  [50, 80].forEach(v => {
+    const y = pad.t + ch - (v / 100) * ch;
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = v === 50 ? '#eab308' : '#f97316'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + cw, y); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = ctx.strokeStyle; ctx.font = '10px -apple-system, sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText(v + '%', pad.l + cw + 4, y + 4);
+  });
+}
+
+function var_accent() { return '#3b82f6'; }
+
+// ─── Holdings ───
+function renderHoldings() {
+  const sorted = [...portfolio].sort((a, b) => daysHeld(b) - daysHeld(a));
+  const maxD = Math.max(...sorted.map(daysHeld));
+  const lt = sorted.filter(p => yearsHeld(p) >= 1).length;
+  const st = sorted.length - lt;
+  const avgDays = sorted.reduce((s, p) => s + daysHeld(p), 0) / sorted.length;
+
+  document.getElementById('holdingMetrics').innerHTML = `
+    <div class="metric"><div class="label">Avg Holding</div><div class="value">${(avgDays / 365.25).toFixed(1)}y</div></div>
+    <div class="metric"><div class="label">Long-Term</div><div class="value text-green">${lt}</div><div class="sub">> 1 year</div></div>
+    <div class="metric"><div class="label">Short-Term</div><div class="value text-red">${st}</div><div class="sub">≤ 1 year</div></div>
+    <div class="metric"><div class="label">Oldest</div><div class="value">${sorted[0]?.symbol || '-'}</div><div class="sub">${maxD.toLocaleString()}d</div></div>
+  `;
+
+  let html = `<table><thead><tr><th>Symbol</th><th>Purchased</th><th class="text-right">Days</th><th class="text-right">Years</th><th>Duration</th><th>Tax</th></tr></thead><tbody>`;
+  sorted.forEach((p, i) => {
+    const d = daysHeld(p), y = yearsHeld(p);
+    const isLT = y >= 1;
+    html += `<tr>
+      <td><strong>${p.symbol}</strong></td>
+      <td>${p.purchase_date}</td>
+      <td class="text-right">${d.toLocaleString()}</td>
+      <td class="text-right">${y.toFixed(1)}</td>
+      <td><div class="bar-track"><div class="bar-fill" style="width:${d/maxD*100}%;background:${isLT ? 'var(--green)' : 'var(--red)'};"></div></div></td>
+      <td><span style="color:${isLT ? 'var(--green)' : 'var(--red)'};font-weight:600;font-size:0.75rem;">${isLT ? 'LT' : 'ST'}</span></td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById('holdingsTable').innerHTML = html;
+}
+
+// ─── Diversification ───
+function renderDiversification() {
+  const s = diversificationScore();
+  const color = s.score >= 70 ? 'var(--green)' : s.score >= 50 ? 'var(--yellow)' : 'var(--red)';
+  const pct = s.score / 100;
+  const circumference = 2 * Math.PI * 48;
+  const offset = circumference * (1 - pct);
+
+  document.getElementById('scoreRing').innerHTML = `
+    <svg width="120" height="120" viewBox="0 0 120 120">
+      <circle cx="60" cy="60" r="48" fill="none" stroke="#334155" stroke-width="8"/>
+      <circle cx="60" cy="60" r="48" fill="none" stroke="${color}" stroke-width="8"
+        stroke-dasharray="${circumference}" stroke-dashoffset="${offset}" stroke-linecap="round"
+        style="transition: stroke-dashoffset 1s ease;"/>
+    </svg>
+    <div class="label"><div class="grade" style="color:${color}">${s.grade}</div><div class="pts">${s.score.toFixed(0)}/100</div></div>
+  `;
+
+  const checks = [
+    { label: 'Positions', value: s.n, target: '10+', good: s.n >= 10 },
+    { label: 'Effective Positions', value: s.eff.toFixed(1), target: '8+', good: s.eff >= 8 },
+    { label: 'Asset Classes', value: s.classes, target: '3+', good: s.classes >= 3 },
+    { label: 'Top 3 Concentration', value: fmtPct(s.top3), target: '<30%', good: s.top3 < 30 },
+    { label: 'HHI', value: s.hhi.toFixed(4), target: '<0.15', good: s.hhi < 0.15 },
+  ];
+
+  let html = '';
+  checks.forEach(c => {
+    const icon = c.good ? '✓' : '✗';
+    const clr = c.good ? 'var(--green)' : 'var(--red)';
+    html += `<div class="card" style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
+      <div><span style="color:${clr};font-weight:700;margin-right:8px;">${icon}</span><span style="font-weight:600;">${c.label}</span></div>
+      <div style="text-align:right;"><span style="font-weight:700;font-size:1rem;">${c.value}</span><span style="color:var(--text-dim);font-size:0.75rem;margin-left:8px;">target: ${c.target}</span></div>
+    </div>`;
+  });
+  document.getElementById('scoreBreakdown').innerHTML = html;
+}
+
+// ─── Toast ───
+function toast(msg) {
+  const el = document.createElement('div');
+  el.className = 'toast'; el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2500);
+}
+
+// ─── Resize handler ───
+window.addEventListener('resize', () => { if (portfolio.length) { drawPieChart(); renderAllocation(); renderConcentration(); } });
+</script>
+</body>
+</html>
