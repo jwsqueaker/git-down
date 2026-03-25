@@ -10,6 +10,8 @@ import cv2
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from divot.claims.tracker import ClaimTracker, ClaimStatus, Evidence
@@ -92,10 +94,19 @@ def create_app(
 ) -> FastAPI:
     app = FastAPI(title="Divot API", version="0.1.0")
 
+    # Serve static frontend
+    static_dir = Path(__file__).resolve().parent.parent / "static"
+    if static_dir.is_dir():
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
     _detector = detector or PotholeDetector()
     _iri = iri_engine or QuarterCarIRI()
     _predict = predict_model  # may be None if no model loaded
     _claims = ClaimTracker()
+
+    @app.get("/")
+    def index():
+        return FileResponse(str(static_dir / "index.html"))
 
     @app.get("/health")
     def health():
