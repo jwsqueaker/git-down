@@ -1,99 +1,87 @@
-# Portfolio Analysis & Tracking Dashboard
+# Divot
 
-A comprehensive portfolio analysis dashboard with macro economic indicators, risk-adjusted performance metrics, and correlation analysis.
+**Pothole detection, IRI mapping, and predictive road-condition modeling.**
+
+Divot turns dashcam video and accelerometer data into actionable road-maintenance
+intelligence. It detects potholes in real time, computes International Roughness
+Index (IRI) profiles, and forecasts future pavement degradation so crews can
+prioritize repairs before failures cascade.
 
 ## Features
 
-### Portfolio Analysis
-- **Performance Metrics**: Total return, annualized return, volatility
-- **Risk-Adjusted Returns**:
-  - Sharpe Ratio
-  - Sortino Ratio
-  - Treynor Ratio
-  - Information Ratio
-  - Calmar Ratio
-  - Maximum Drawdown
-- **Asset Allocation**: Visual breakdown of portfolio holdings
-- **Historical Performance**: Time-series analysis with interactive charts
+| Module | What it does |
+|---|---|
+| `divot.detect` | YOLOv8-based pothole detector — works on dashcam frames or images |
+| `divot.iri` | Computes quarter-car IRI from accelerometer + GPS traces |
+| `divot.predict` | Gradient-boosted regression model that forecasts IRI 6-12 months ahead |
+| `divot.api` | FastAPI service that wraps all three modules behind a REST API |
+| `divot.viz` | Folium / Plotly helpers for mapping defects and IRI heat-maps |
 
-### Macro Economic Indicators
-- GDP Growth
-- Inflation (CPI)
-- Unemployment Rate
-- Interest Rates (10-Year Treasury)
-- Fed Funds Rate
-- VIX (Market Volatility Index)
+## Quick start
 
-### Benchmark Comparison
-- Compare portfolio against major indices (S&P 500, Nasdaq, etc.)
-- Relative performance analysis
-- Beta and correlation metrics
-
-### LTCMA Analysis
-- Upload JP Morgan Long-Term Capital Market Assumptions
-- Correlation analysis between portfolio and asset class assumptions
-- Forward-looking return expectations
-
-## Setup
-
-1. **Install Dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-2. **Configure Environment**:
-   ```bash
-   cp .env.example .env
-   # Edit .env and add your FRED API key
-   ```
-
-3. **Get FRED API Key** (Free):
-   - Visit: https://fred.stlouisfed.org/docs/api/api_key.html
-   - Sign up and get your API key
-   - Add to `.env` file
-
-## Usage
-
-### Run the Dashboard:
 ```bash
-streamlit run app.py
+# 1. Install
+pip install -e ".[dev]"
+
+# 2. Detect potholes in an image
+divot detect --input photo.jpg --output results/
+
+# 3. Compute IRI from a drive log
+divot iri --accel data/accel.csv --gps data/gps.csv
+
+# 4. Train the predictive model
+divot train --data data/road_sections.parquet --out models/
+
+# 5. Launch the API
+divot serve --port 8000
 ```
 
-### Upload Portfolio:
-1. Prepare CSV with columns: `symbol`, `shares`, `purchase_date`, `purchase_price`
-2. Use the upload feature in the dashboard sidebar
-3. View real-time portfolio analysis
-
-### Upload LTCMA Data:
-1. Download JP Morgan LTCMA data
-2. Format as CSV with columns: `asset_class`, `expected_return`, `volatility`, `correlation_data`
-3. Upload through the dashboard
-
-## Data Sources
-
-- **Market Data**: Yahoo Finance (via yfinance)
-- **Macro Indicators**: FRED (Federal Reserve Economic Data)
-- **Portfolio Positions**: CSV upload
-- **LTCMA Data**: Manual CSV upload
-
-## Project Structure
+## Project layout
 
 ```
-portfolio-dashboard/
-├── app.py                      # Main Streamlit application
-├── config/
-│   └── settings.py             # Configuration and environment variables
-├── models/
-│   ├── database.py             # Database models and schema
-│   └── portfolio.py            # Portfolio data models
-├── services/
-│   ├── data_fetcher.py         # Market data and macro indicators
-│   ├── portfolio_calculator.py # Portfolio metrics and analytics
-│   └── risk_metrics.py         # Risk-adjusted return calculations
-├── utils/
-│   ├── csv_handler.py          # CSV upload and processing
-│   └── helpers.py              # Utility functions
-└── requirements.txt
+divot/
+  detect/       # pothole detection (YOLOv8)
+  iri/          # IRI computation (quarter-car model)
+  predict/      # predictive degradation model
+  api/          # FastAPI service
+  viz/          # mapping & visualisation helpers
+data/           # sample datasets
+models/         # saved model weights / artefacts
+tests/          # pytest suite
+```
+
+## Data formats
+
+**Accelerometer CSV** — columns: `timestamp, ax, ay, az` (m/s^2, 100 Hz+)
+
+**GPS CSV** — columns: `timestamp, lat, lon, speed_mps`
+
+**Road sections Parquet** — one row per 100 m section with historical IRI,
+AADT, climate zone, pavement type, last-repair date, etc.
+
+## Configuration
+
+Copy `config/default.yaml` and override values:
+
+```yaml
+detect:
+  model: yolov8m          # yolov8n | yolov8s | yolov8m
+  confidence: 0.45
+  device: cuda:0           # cpu | cuda:N
+
+iri:
+  quarter_car:
+    speed_mps: 22.22       # 80 km/h reference
+    sample_rate_hz: 100
+
+predict:
+  horizon_months: 6
+  features:
+    - current_iri
+    - aadt
+    - freeze_thaw_cycles
+    - pavement_age_years
+    - last_repair_years
 ```
 
 ## License
