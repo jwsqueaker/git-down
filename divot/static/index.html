@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Divot — Every pothole has a paper trail</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --border: #2a2d3a;
+      --text: #e4e4e7;
+      --muted: #9ca3af;
+      --accent: #f97316;
+      --red: #ef4444;
+      --green: #22c55e;
+      --yellow: #eab308;
+      --blue: #3b82f6;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    header h1 {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    header h1 span { color: var(--accent); }
+
+    .tagline {
+      font-size: 13px;
+      color: var(--muted);
+      margin-left: 12px;
+    }
+
+    .header-left { display: flex; align-items: center; }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .status-pill {
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 12px;
+      background: rgba(34, 197, 94, 0.15);
+      color: var(--green);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+
+    /* ── Dashboard cards ── */
+    .dashboard {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      padding: 20px 24px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+
+    .card-label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .card-value {
+      font-size: 32px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .card-value.orange { color: var(--accent); }
+    .card-value.red { color: var(--red); }
+    .card-value.green { color: var(--green); }
+    .card-value.blue { color: var(--blue); }
+
+    .card-sub {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    /* ── Main layout ── */
+    .main {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 0;
+      height: calc(100vh - 170px);
+    }
+
+    /* ── Map ── */
+    #map {
+      width: 100%;
+      height: 100%;
+      min-height: 400px;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      border-left: 1px solid var(--border);
+      background: var(--surface);
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sidebar-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .sidebar-tab {
+      flex: 1;
+      padding: 12px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      background: none;
+      border: none;
+      color: var(--muted);
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+
+    .sidebar-tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    .sidebar-panel { display: none; padding: 20px; flex: 1; }
+    .sidebar-panel.active { display: flex; flex-direction: column; }
+
+    /* ── Report form ── */
+    .form-group { margin-bottom: 16px; }
+
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: var(--muted);
+    }
+
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+    }
+
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+      border-color: var(--accent);
+    }
+
+    .form-group textarea { resize: vertical; min-height: 80px; }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border-radius: 8px;
+      border: none;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      width: 100%;
+    }
+
+    .btn:hover { opacity: 0.85; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .btn-outline {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      padding: 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.15s;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .drop-zone:hover,
+    .drop-zone.dragover {
+      border-color: var(--accent);
+    }
+
+    .drop-zone input { display: none; }
+
+    .file-name {
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--green);
+    }
+
+    /* ── Claims list ── */
+    .claim-item {
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 10px;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+
+    .claim-item:hover { border-color: var(--accent); }
+
+    .claim-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .claim-id {
+      font-size: 13px;
+      font-weight: 600;
+      font-family: monospace;
+    }
+
+    .claim-status {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .claim-status.detected { background: rgba(59,130,246,0.15); color: var(--blue); }
+    .claim-status.city_knew { background: rgba(234,179,8,0.15); color: var(--yellow); }
+    .claim-status.filed { background: rgba(249,115,22,0.15); color: var(--accent); }
+    .claim-status.pending { background: rgba(249,115,22,0.15); color: var(--accent); }
+    .claim-status.approved { background: rgba(34,197,94,0.15); color: var(--green); }
+    .claim-status.denied { background: rgba(239,68,68,0.15); color: var(--red); }
+
+    .claim-coords {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .claim-amount {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--green);
+      margin-top: 4px;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--muted);
+    }
+
+    .empty-state p { font-size: 14px; margin-top: 8px; }
+
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      z-index: 9999;
+      transform: translateY(80px);
+      opacity: 0;
+      transition: all 0.3s;
+    }
+
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast.success { background: var(--green); color: #fff; }
+    .toast.error { background: var(--red); color: #fff; }
+
+    .locate-btn {
+      font-size: 12px;
+      color: var(--accent);
+      background: none;
+      border: none;
+      cursor: pointer;
+      text-decoration: underline;
+      padding: 0;
+      margin-top: 4px;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 768px) {
+      .dashboard { grid-template-columns: repeat(2, 1fr); }
+      .main { grid-template-columns: 1fr; height: auto; }
+      #map { height: 350px; }
+      .tagline { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <h1><span>divot</span></h1>
+      <span class="tagline">Every pothole has a paper trail.</span>
+    </div>
+    <div class="header-right">
+      <span class="status-pill" id="connection-status">Connecting...</span>
+    </div>
+  </header>
+
+  <!-- Dashboard -->
+  <div class="dashboard">
+    <div class="card">
+      <div class="card-label">Detected</div>
+      <div class="card-value blue" id="stat-detected">0</div>
+      <div class="card-sub">potholes found</div>
+    </div>
+    <div class="card">
+      <div class="card-label">City Knew</div>
+      <div class="card-value yellow" id="stat-city-knew" style="color: var(--yellow)">0</div>
+      <div class="card-sub">prior 311 records</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Filed</div>
+      <div class="card-value orange" id="stat-filed">0</div>
+      <div class="card-sub">claims submitted</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Pending</div>
+      <div class="card-value green" id="stat-pending">$0</div>
+      <div class="card-sub">recovery in progress</div>
+    </div>
+  </div>
+
+  <!-- Main: map + sidebar -->
+  <div class="main">
+    <div id="map"></div>
+
+    <div class="sidebar">
+      <div class="sidebar-tabs">
+        <button class="sidebar-tab active" data-tab="report">Report</button>
+        <button class="sidebar-tab" data-tab="claims">Claims</button>
+        <button class="sidebar-tab" data-tab="detect">Detect</button>
+      </div>
+
+      <!-- Report panel -->
+      <div class="sidebar-panel active" id="panel-report">
+        <h3 style="font-size: 16px; margin-bottom: 16px;">Report a Pothole</h3>
+        <form id="report-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Latitude</label>
+              <input type="number" step="any" id="report-lat" placeholder="34.0522" required>
+            </div>
+            <div class="form-group">
+              <label>Longitude</label>
+              <input type="number" step="any" id="report-lon" placeholder="-118.2437" required>
+            </div>
+          </div>
+          <button type="button" class="locate-btn" id="use-map-location">
+            Use map centre as location
+          </button>
+          <br><br>
+
+          <div class="form-group">
+            <label>Photo (optional)</label>
+            <div class="drop-zone" id="photo-drop">
+              <p>Drop an image or click to upload</p>
+              <input type="file" accept="image/*" id="report-photo">
+              <div class="file-name" id="photo-filename"></div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Damage estimate (USD)</label>
+            <input type="number" step="0.01" min="0" id="report-damage" placeholder="0.00">
+          </div>
+
+          <div class="form-group">
+            <label>Notes</label>
+            <textarea id="report-notes" placeholder="Description of the pothole and damage..."></textarea>
+          </div>
+
+          <button type="submit" class="btn btn-primary">Submit Report</button>
+        </form>
+      </div>
+
+      <!-- Claims panel -->
+      <div class="sidebar-panel" id="panel-claims">
+        <h3 style="font-size: 16px; margin-bottom: 16px;">Your Claims</h3>
+        <div id="claims-list">
+          <div class="empty-state">
+            <p>No claims yet. Report a pothole to get started.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Detect panel -->
+      <div class="sidebar-panel" id="panel-detect">
+        <h3 style="font-size: 16px; margin-bottom: 16px;">Detect Potholes</h3>
+        <p style="font-size: 13px; color: var(--muted); margin-bottom: 16px;">
+          Upload a dashcam photo to detect potholes automatically.
+        </p>
+        <form id="detect-form">
+          <div class="form-group">
+            <div class="drop-zone" id="detect-drop">
+              <p>Drop a dashcam image here</p>
+              <input type="file" accept="image/*" id="detect-photo">
+              <div class="file-name" id="detect-filename"></div>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary">Run Detection</button>
+        </form>
+        <div id="detect-results" style="margin-top: 16px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const API = window.location.origin;
+
+    // ── Map ──
+    const map = L.map('map').setView([34.05, -118.24], 12);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OSM &copy; CARTO',
+      maxZoom: 19,
+    }).addTo(map);
+
+    const markers = L.layerGroup().addTo(map);
+
+    function addPotholeMarker(lat, lon, claim) {
+      const color = {
+        detected: '#3b82f6',
+        city_knew: '#eab308',
+        filed: '#f97316',
+        pending: '#f97316',
+        approved: '#22c55e',
+        denied: '#ef4444',
+      }[claim.status] || '#f97316';
+
+      L.circleMarker([lat, lon], {
+        radius: 8,
+        fillColor: color,
+        color: '#fff',
+        weight: 2,
+        fillOpacity: 0.85,
+      })
+        .bindPopup(`
+          <b>Claim ${claim.id}</b><br>
+          Status: <b>${claim.status}</b><br>
+          ${claim.damage_amount_usd ? '$' + claim.damage_amount_usd.toFixed(2) : ''}
+        `)
+        .addTo(markers);
+    }
+
+    // ── Toast ──
+    function showToast(msg, type = 'success') {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.className = `toast ${type} show`;
+      setTimeout(() => el.classList.remove('show'), 3000);
+    }
+
+    // ── Dashboard ──
+    async function refreshDashboard() {
+      try {
+        const res = await fetch(`${API}/dashboard`);
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        document.getElementById('stat-detected').textContent = data.detected;
+        document.getElementById('stat-city-knew').textContent = data.city_knew;
+        document.getElementById('stat-filed').textContent = data.filed;
+        document.getElementById('stat-pending').textContent =
+          '$' + data.pending_usd.toLocaleString(undefined, { minimumFractionDigits: 0 });
+        document.getElementById('connection-status').textContent = 'Connected';
+        document.getElementById('connection-status').style.color = 'var(--green)';
+      } catch {
+        document.getElementById('connection-status').textContent = 'Offline';
+        document.getElementById('connection-status').style.color = 'var(--red)';
+        document.getElementById('connection-status').style.borderColor = 'rgba(239,68,68,0.3)';
+        document.getElementById('connection-status').style.background = 'rgba(239,68,68,0.15)';
+      }
+    }
+
+    // ── Claims list ──
+    async function refreshClaims() {
+      try {
+        const res = await fetch(`${API}/claims`);
+        if (!res.ok) return;
+        const claims = await res.json();
+        const list = document.getElementById('claims-list');
+
+        markers.clearLayers();
+
+        if (claims.length === 0) {
+          list.innerHTML = '<div class="empty-state"><p>No claims yet.</p></div>';
+          return;
+        }
+
+        list.innerHTML = claims.map(c => `
+          <div class="claim-item" onclick="map.setView([${c.lat}, ${c.lon}], 16)">
+            <div class="claim-header">
+              <span class="claim-id">#${c.id}</span>
+              <span class="claim-status ${c.status}">${c.status.replace('_', ' ')}</span>
+            </div>
+            <div class="claim-coords">${c.lat.toFixed(5)}, ${c.lon.toFixed(5)}</div>
+            ${c.damage_amount_usd ? `<div class="claim-amount">$${c.damage_amount_usd.toFixed(2)}</div>` : ''}
+          </div>
+        `).join('');
+
+        claims.forEach(c => addPotholeMarker(c.lat, c.lon, c));
+      } catch {}
+    }
+
+    // ── Sidebar tabs ──
+    document.querySelectorAll('.sidebar-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.sidebar-panel').forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById(`panel-${tab.dataset.tab}`).classList.add('active');
+      });
+    });
+
+    // ── Use map centre ──
+    document.getElementById('use-map-location').addEventListener('click', () => {
+      const c = map.getCenter();
+      document.getElementById('report-lat').value = c.lat.toFixed(6);
+      document.getElementById('report-lon').value = c.lng.toFixed(6);
+    });
+
+    // ── Drop zones ──
+    function setupDropZone(dropId, inputId, filenameId) {
+      const drop = document.getElementById(dropId);
+      const input = document.getElementById(inputId);
+      const fname = document.getElementById(filenameId);
+
+      drop.addEventListener('click', () => input.click());
+      drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('dragover'); });
+      drop.addEventListener('dragleave', () => drop.classList.remove('dragover'));
+      drop.addEventListener('drop', e => {
+        e.preventDefault();
+        drop.classList.remove('dragover');
+        input.files = e.dataTransfer.files;
+        fname.textContent = input.files[0]?.name || '';
+      });
+      input.addEventListener('change', () => {
+        fname.textContent = input.files[0]?.name || '';
+      });
+    }
+
+    setupDropZone('photo-drop', 'report-photo', 'photo-filename');
+    setupDropZone('detect-drop', 'detect-photo', 'detect-filename');
+
+    // ── Report form ──
+    document.getElementById('report-form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const lat = document.getElementById('report-lat').value;
+      const lon = document.getElementById('report-lon').value;
+      const photo = document.getElementById('report-photo').files[0];
+      const damage = document.getElementById('report-damage').value;
+
+      const form = new FormData();
+      form.append('lat', lat);
+      form.append('lon', lon);
+      if (photo) form.append('image', photo);
+
+      try {
+        const res = await fetch(`${API}/report`, { method: 'POST', body: form });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+
+        // If there's a damage amount, file the claim
+        if (damage && parseFloat(damage) > 0) {
+          await fetch(`${API}/claims`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              lat: parseFloat(lat),
+              lon: parseFloat(lon),
+              damage_amount_usd: parseFloat(damage),
+            }),
+          });
+        }
+
+        showToast(`Claim #${data.claim_id} created`);
+        document.getElementById('report-form').reset();
+        document.getElementById('photo-filename').textContent = '';
+        refreshDashboard();
+        refreshClaims();
+      } catch {
+        showToast('Failed to submit report', 'error');
+      }
+    });
+
+    // ── Detect form ──
+    document.getElementById('detect-form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const photo = document.getElementById('detect-photo').files[0];
+      if (!photo) { showToast('Select an image first', 'error'); return; }
+
+      const form = new FormData();
+      form.append('image', photo);
+
+      const results = document.getElementById('detect-results');
+      results.innerHTML = '<p style="color:var(--muted)">Analyzing...</p>';
+
+      try {
+        const res = await fetch(`${API}/detect`, { method: 'POST', body: form });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+
+        if (data.count === 0) {
+          results.innerHTML = '<p style="color:var(--muted)">No potholes detected.</p>';
+        } else {
+          results.innerHTML = `
+            <p style="color:var(--green); font-weight:600; margin-bottom:12px;">
+              ${data.count} pothole${data.count > 1 ? 's' : ''} detected
+            </p>
+            ${data.detections.map((d, i) => `
+              <div class="claim-item">
+                <div class="claim-header">
+                  <span class="claim-id">Detection ${i + 1}</span>
+                  <span style="color:var(--accent)">${(d.confidence * 100).toFixed(0)}%</span>
+                </div>
+                <div class="claim-coords">
+                  Box: (${d.x1}, ${d.y1}) → (${d.x2}, ${d.y2})
+                </div>
+              </div>
+            `).join('')}
+          `;
+        }
+      } catch {
+        results.innerHTML = '<p style="color:var(--red)">Detection failed. Is the server running?</p>';
+      }
+    });
+
+    // ── Service worker ──
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
+
+    // ── Init ──
+    refreshDashboard();
+    refreshClaims();
+    setInterval(refreshDashboard, 30000);
+  </script>
+</body>
+</html>

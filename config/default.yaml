@@ -1,0 +1,46 @@
+detect:
+  model: yolov8m
+  confidence: 0.45
+  device: cpu
+  img_size: 640
+
+iri:
+  quarter_car:
+    c_s: 6000        # suspension damping (N·s/m)
+    k_s: 63000       # suspension stiffness (N/m)
+    k_t: 150000      # tyre stiffness (N/m)
+    m_s: 250          # sprung mass (kg)
+    m_u: 40           # unsprung mass (kg)
+    speed_mps: 22.22  # 80 km/h reference speed
+    sample_rate_hz: 100
+  segment_length_m: 100
+
+predict:
+  horizon_months: 6
+  n_estimators: 500
+  learning_rate: 0.05
+  max_depth: 6
+  features:
+    - current_iri
+    - aadt
+    - freeze_thaw_cycles
+    - pavement_age_years
+    - last_repair_years
+    - precipitation_mm
+    - heavy_vehicle_pct
+
+claims:
+  default_city: los_angeles
+  auto_311_lookup: true
+  radius_m: 50
+  supported_cities:
+    - los_angeles
+    - chicago
+    - nyc
+    - philadelphia
+    - houston
+
+api:
+  host: 0.0.0.0
+  port: 8000
+  workers: 2
