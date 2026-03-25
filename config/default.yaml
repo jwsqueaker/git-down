@@ -29,6 +29,17 @@ predict:
     - precipitation_mm
     - heavy_vehicle_pct
 
+claims:
+  default_city: los_angeles
+  auto_311_lookup: true
+  radius_m: 50
+  supported_cities:
+    - los_angeles
+    - chicago
+    - nyc
+    - philadelphia
+    - houston
+
 api:
   host: 0.0.0.0
   port: 8000

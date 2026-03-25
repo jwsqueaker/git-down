@@ -1,4 +1,4 @@
-"""FastAPI application that exposes detection, IRI, and prediction endpoints."""
+"""FastAPI application that exposes detection, IRI, prediction, and claims endpoints."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import pandas as pd
 from fastapi import FastAPI, File, UploadFile
 from pydantic import BaseModel
 
+from divot.claims.tracker import ClaimTracker, ClaimStatus, Evidence
 from divot.detect import PotholeDetector
 from divot.iri import QuarterCarIRI
 from divot.predict import DegradationModel
@@ -58,6 +59,29 @@ class PredictResponse(BaseModel):
     horizon_months: int
 
 
+class ClaimCreate(BaseModel):
+    lat: float
+    lon: float
+    damage_amount_usd: float = 0.0
+
+
+class ClaimOut(BaseModel):
+    id: str
+    lat: float
+    lon: float
+    status: str
+    city_records: list[str]
+    damage_amount_usd: float
+
+
+class DashboardSummary(BaseModel):
+    detected: int
+    city_knew: int
+    filed: int
+    pending_usd: float
+    total_claims: int
+
+
 # ------------------------------------------------------------------
 # App factory
 # ------------------------------------------------------------------
@@ -71,6 +95,7 @@ def create_app(
     _detector = detector or PotholeDetector()
     _iri = iri_engine or QuarterCarIRI()
     _predict = predict_model  # may be None if no model loaded
+    _claims = ClaimTracker()
 
     @app.get("/health")
     def health():
@@ -120,5 +145,61 @@ def create_app(
             predicted_iri=float(pred),
             horizon_months=_predict.horizon_months,
         )
+
+    # ------------------------------------------------------------------
+    # Claims endpoints
+    # ------------------------------------------------------------------
+    @app.get("/dashboard", response_model=DashboardSummary)
+    def dashboard():
+        return DashboardSummary(**_claims.summary())
+
+    @app.post("/claims", response_model=ClaimOut)
+    def create_claim(req: ClaimCreate):
+        claim = _claims.create(lat=req.lat, lon=req.lon)
+        if req.damage_amount_usd:
+            claim.file(req.damage_amount_usd)
+        return ClaimOut(
+            id=claim.id,
+            lat=claim.lat,
+            lon=claim.lon,
+            status=claim.status.value,
+            city_records=claim.city_records,
+            damage_amount_usd=claim.damage_amount_usd,
+        )
+
+    @app.get("/claims", response_model=list[ClaimOut])
+    def list_claims():
+        return [
+            ClaimOut(
+                id=c.id, lat=c.lat, lon=c.lon,
+                status=c.status.value,
+                city_records=c.city_records,
+                damage_amount_usd=c.damage_amount_usd,
+            )
+            for c in _claims.all()
+        ]
+
+    @app.post("/report")
+    async def report_pothole(
+        lat: float,
+        lon: float,
+        image: UploadFile = File(None),
+    ):
+        """Quick-report endpoint: detect + create claim in one call."""
+        evidence: list[Evidence] = []
+        if image:
+            contents = await image.read()
+            arr = np.frombuffer(contents, np.uint8)
+            img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+            result = _detector.detect_image(img)
+            if result.count > 0:
+                evidence.append(Evidence(kind="photo", path_or_url=image.filename or "upload"))
+
+        claim = _claims.create(lat=lat, lon=lon, evidence=evidence)
+        return {
+            "claim_id": claim.id,
+            "status": claim.status.value,
+            "evidence_count": len(evidence),
+        }
 
     return app
